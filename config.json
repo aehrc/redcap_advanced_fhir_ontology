@@ -1,0 +1,208 @@
+{
+  "name": "Advanced Fhir Ontology Module",
+  "namespace": "AEHRC\\AdvancedFhirOntologyExternalModule",
+  "description": "This module provides advanced support for referencing an external Fhir based ontology server to lookup values.",
+  "tt_name": "module_name",
+  "tt_description": "module_description",
+  "tt_documentation": "doc_path",
+  "authors": [
+    {
+      "name": "David Conlan",
+      "email": "david.conlan@csiro.au",
+      "institution": "Commonwealth Science & Industrial Research Organisation"
+    }
+  ],
+  "permissions": [
+    "redcap_every_page_before_render"
+  ],
+  "enable-every-page-hooks-on-system-pages": false,
+  "system-settings": [
+    {
+      "key": "site-category-list",
+      "tt_name": "site_category_list",
+      "name": "List of Ontologies for the site",
+      "required": false,
+      "type": "sub_settings",
+      "repeatable": true,
+      "sub_settings": [
+        {
+          "key": "ontology-id",
+          "tt_name": "ontology_id",
+          "name": "Ontology ID",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "key": "ontology-name",
+          "tt_name": "ontology_name",
+          "name": "Ontology Name",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "key": "template_info",
+          "tt_name": "template_info",
+          "name": "Templates for the code and display, use ${CODE}, ${SYSTEM} and ${DISPLAY} to reference the values returned by the FHIR server. For example, if you know all codes are from the same code system, you could use '${CODE}' for the code template, but a valueset with multiple code systems a value of '${SYSTEM}|${CODE}' could be used.",
+          "type": "descriptive"
+        },
+        {
+          "key": "code-template",
+          "tt_name": "code_template",
+          "name": "Code Template",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "key": "display-template",
+          "tt_name": "display_template",
+          "name": "Display Template",
+          "required": true,
+          "type": "text"
+        },
+        {
+          "key": "no_result_info",
+          "tt_name": "no_result_info",
+          "name": "Settings for returning a custom code if no result is found. If the return no result found checkbox is not selected, the other options can be ignored",
+          "type": "descriptive"
+        },
+        {
+          "key": "return-no-result",
+          "tt_name": "return_no_result",
+          "name": "Return 'No Results Found'",
+          "type": "checkbox"
+        },
+        {
+          "key": "no-result-label",
+          "tt_name": "no_result_label",
+          "name": "No Results Label",
+          "type": "text"
+        },
+        {
+          "key": "no-result-code",
+          "tt_name": "no_result_code",
+          "name": "No Results Code",
+          "type": "text"
+        },
+        {
+          "key": "fhir_server_info",
+          "tt_name": "fhir_server_info",
+          "name": "Settings for the FHIR server to use. The OAuth settings are only required if OAuth2 client credentials authentication is selected. Example FHIR api url eg. https://r4.ontoserver.csiro.au/fhir. Don't leave a trailing slash.",
+          "type": "descriptive"
+        },
+        {
+          "key": "fhir-api-url",
+          "tt_name": "fhir_api_url",
+          "name": "FHIR API URL",
+          "type": "text",
+          "required": true
+        },
+        {
+          "key": "authentication-type",
+          "tt_name": "authentication_type",
+          "name": "Authentication Type",
+          "required": true,
+          "type": "dropdown",
+          "choices": [
+            {
+              "value": "none",
+              "tt_name": "authentication_type_none",
+              "name": "No Authentication Required"
+            },
+            {
+              "value": "cc",
+              "tt_name": "authentication_type_cc",
+              "name": "OAuth2 Client Credentials"
+            }
+          ]
+        },
+        {
+          "key": "cc-token-endpoint",
+          "tt_name": "cc_token_endpoint",
+          "name": "OAuth2 token endpoint",
+          "type": "text"
+        },
+        {
+          "key": "cc-client-id",
+          "tt_name": "cc_client_id",
+          "name": "OAuth2 Client Id",
+          "type": "text"
+        },
+        {
+          "key": "cc-client-secret",
+          "tt_name": "cc_client_secret",
+          "name": "OAuth2 Client Secret",
+          "type": "text"
+        },
+        {
+          "key": "valueset_info",
+          "tt_name": "valueset_info",
+          "name": "The valueset to use. A valueset can be defined as a url, or as a FHIR resource as JSON",
+          "type": "descriptive"
+        },
+        {
+          "key": "valueset-type",
+          "tt_name": "valueset_type",
+          "name": "ValueSet Type",
+          "required": true,
+          "type": "dropdown",
+          "choices": [
+            {
+              "value": "url",
+              "tt_name": "valueset_type_url",
+              "name": "ValueSet URL"
+            },
+            {
+              "value": "resource",
+              "tt_name": "valueset_type_resource",
+              "name": "ValueSet Resource (JSON)"
+            }
+          ]
+        },
+        {
+          "key": "valueset",
+          "tt_name": "valueset",
+          "name": "ValueSet",
+          "required": true,
+          "type": "textarea"
+        },
+        {
+          "key": "priority_info",
+          "tt_name": "priority_info",
+          "name": "Priority Codes is a list of codes which if appear in the results will be sorted above non-priority codes. The priority max fetch is how many additional values to request to allow for priority codes to appear in the result list. Each code should be listed on a new line. Only the code is considered, not the system.",
+          "type": "descriptive"
+        },
+        {
+          "key": "priority-codes",
+          "tt_name": "priority_codes",
+          "name": "Priority Codes",
+          "required": false,
+          "type": "textarea"
+        },
+        {
+          "key": "priority-max-fetch",
+          "tt_name": "priority_max_fetch",
+          "name": "Priority Max Fetch",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "key": "banned_info",
+          "tt_name": "banned_info",
+          "name": "Banned Codes is a list of codes which if appear in the results will be removed. Each code should be listed on a new line. Only the code is considered, not the system.",
+          "type": "descriptive"
+        },
+        {
+          "key": "banned-codes",
+          "tt_name": "banned_codes",
+          "name": "Banned Codes",
+          "required": false,
+          "type": "textarea"
+        }
+      ]
+    }
+  ],
+  "compatibility": {
+    "php-version-min": "5.4.0",
+    "redcap-version-min": "8.8.1"
+  }
+}
