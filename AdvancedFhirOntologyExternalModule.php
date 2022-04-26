@@ -359,8 +359,8 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
             // no results found
             $return_no_result = $thisCategory['return-no-result'];
             if ($return_no_result) {
-                $no_result_label = $thisCategory['no_result_label'];
-                $no_result_code = $thisCategory['no_result_code'];
+                $no_result_label = $thisCategory['no-result-label'];
+                $no_result_code = $thisCategory['no-result-code'];
                 $results[$no_result_code] = $no_result_label;
             }
         }
