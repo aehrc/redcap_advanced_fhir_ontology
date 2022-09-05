@@ -25,7 +25,7 @@ defined in the system settings, with no 'helper' mechanisms to search for a valu
 
 
 ## Using the module
-The module code needs to be placed in a directory `modules/advanced_fhir_ontology_v0.1`
+The module code needs to be placed in a directory `modules/advanced_fhir_ontology_v0.2`
 
 The module should then show up as an external module.
 
