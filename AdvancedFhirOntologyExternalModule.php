@@ -154,8 +154,8 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     // remove trailing /
                     $fhirUrl = substr($fhirUrl, 0, $strlen - 1);
                 }
-                $metadata = http_get($fhirUrl . '/metadata');
-                if ($metadata == FALSE) {
+                $metadata = $this->httpGet($fhirUrl . '/metadata', ['User-Agent: Redcap']);
+                if ($metadata === FALSE) {
                     $errors .= "Ontology Id " . $ontologyIdValues[$key] . " - Failed to get metadata for fhir server at '" . $fhirUrl . "'\n";
                 }
                 $authType = $authTypes[$key];
@@ -168,7 +168,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     $params = array(
                         'grant_type' => 'client_credentials'
                     );
-                    $headers = ['Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret)];
+                    $headers = ['User-Agent: Redcap', 'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret)];
 
                     try {
                         $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
@@ -258,7 +258,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
             $priorityFetchAdd = $thisCategory['$priority-max-fetch'];
             $fetchLimit = $result_limit + ($priorityFetchAdd ? (int)$priorityFetchAdd : 0);
 
-            $headers = [];
+            $headers = ['User-Agent: Redcap'];
 
             $fhirAuthType = $thisCategory['authentication-type'];
 
@@ -293,7 +293,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
             else {
                 // valueset is json
                 $resource = json_decode($valueSet, true);
-                $contentType = "application/json; charset=utf-8";
+                $contentType = "application/json";
 
                 $postData = [
                     "resourceType" => "Parameters",
@@ -325,12 +325,17 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                 // Loop through results
                 $core_results = array();
                 $key_results = array();
+                $hideChoice = $this->getHideChoice();
                 foreach ($expansion['contains'] as $this_item) {
                     $code = $this_item['code'];
                     $display = $this_item['display'];
                     $system = $this_item['system'];
                     if (in_array($code, $bannedCodes)){
                         // code is banned, skip it
+                        continue;
+                    }
+                    if (in_array($code, $hideChoice)){
+                        // code is in hide choide, skip it
                         continue;
                     }
                     $sortKey = array_search($code, $priorityCodes);
@@ -366,6 +371,35 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
         }
         // Return array of results
         return array_slice($results, 0, $result_limit, true);
+    }
+
+    function getHideChoice()
+    {
+        $codesToHide=[];
+        if (isset($_GET['field'])){
+            $field = $_GET['field'];
+            if (isset($Proj->metadata[$_GET['field']])) {
+                $annotations = $Proj->metadata[$field]['field_annotation'];
+            }
+            else if (isset($_GET['pid'])){
+                $project_id = $_GET['pid'];
+                $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
+                $annotations = $dd_array[$field]['field_annotation'];
+            }
+            if ($annotations) {
+                $offset = 0;
+                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
+                    $listedCodesStr = $matches[1][0];
+                    $listedCodes = explode(',', $listedCodesStr);
+                    foreach($listedCodes as $code){
+                        array_push($codesToHide, trim($code));
+                    }
+                    $offset = $matches[0][1] + strlen($matches[0][0]);
+                }
+            }
+        }
+
+        return $codesToHide;
     }
 
     /**
@@ -459,7 +493,14 @@ EOD;
     public function httpPost($fullUrl, $postData, $contentType, $headers)
     {
         // if curl isn't install the default version of http_post in init_functions doesn't include the headers.
-        if (function_exists('curl_init') || empty($headers)) {
+        // but the curl version will overwrite the content type header if other headers are included.
+        if (function_exists('curl_init') && !empty($headers)
+            && $contentType && $contentType != 'application/x-www-form-urlencoded'){
+            $fullHeaders = $headers;
+            $fullHeaders[] = 'Content-type: '.$contentType;
+            return http_post($fullUrl, $postData, null, $contentType, '', $fullHeaders);
+        }
+        else if (function_exists('curl_init') || empty($headers)) {
             return http_post($fullUrl, $postData, null, $contentType, '', $headers);
         }
         // If params are given as an array, then convert to query string format, else leave as is
@@ -528,7 +569,7 @@ EOD;
         $params = array(
             'grant_type' => 'client_credentials'
         );
-        $headers = ['Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret)];
+        $headers = ['User-Agent: Redcap', 'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret)];
 
         $clear = true;
         try {

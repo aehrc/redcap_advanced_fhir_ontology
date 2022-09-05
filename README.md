@@ -252,3 +252,16 @@ It includes the use of an extension that weights values in different sets to be 
 examples the ValueSet includes codes which are childen of `30560011000036108 |trade product|` and 
 `30404011000036106 |trade product pack|` as well as codes from the '30513011000036104|medicinal product pack|' reference
 set. With weightings of 0.01, 10.01 and 5.0 respectively, making trade product pack codes of highest importance.
+
+
+### @HIDECHOICE support
+As part of the 0.2 release extra functionality has been added to this module for it to consider the `@HIDECHOICE`
+action tag. This action tag is available for choice fields to indicate a choice should not be shown. This
+can be achieved at a global level in this module by using the banned codes settings. The
+@HIDECHOICE action tag however is specified at a field level. So the value will only be hidden for the field the
+action tag is specified for. The set of values to hide is defined using a comma separated list of code for the
+values which should be hidden. The module considers all @HIDECHOICE entries found in the annotations property of the
+field.
+```text
+@HIDECHOICE='code1,code2'
+```
