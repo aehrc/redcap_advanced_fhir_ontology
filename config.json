@@ -58,6 +58,12 @@
           "name": "Display Template",
           "required": true,
           "type": "text"
+        },        
+        {
+          "key": "fhir-display-language",
+          "tt_name": "fhir_display_language",
+          "name": "Display Language",
+          "type": "text"
         },
         {
           "key": "no_result_info",
