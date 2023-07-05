@@ -277,6 +277,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
 
             $valueSetType = $thisCategory['valueset-type'];
             $valueSet = $thisCategory['valueset'];
+            $language = $thisCategory['fhir-display-language'];
 
             if ('url' === $valueSetType) {
 
@@ -285,7 +286,8 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                 $url = $fhirServerUrl . "/ValueSet/\$expand?" . http_build_query(array(
                         'url' => $valueSet,
                         'filter' => $search_term,
-                        'count' => $fetchLimit
+                        'count' => $fetchLimit,
+                        'displayLanguage' => $language === ''?'en':$language
                     ));
 
                 $json = $this->httpGet($url, $headers);
@@ -300,7 +302,8 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     "parameter" => [
                         ["name" => "filter", "valueString" => $search_term],
                         ["name" => "_count", "valueInteger" => $fetchLimit],
-                        ["name" => "valueSet", "resource" =>  $resource]
+                        ["name" => "valueSet", "resource" =>  $resource],
+                        ["name" => "displayLanguage", "valueString" =>  $language === ''?'en':$language]
                     ]
                 ];
                 $postData = json_encode($postData, JSON_UNESCAPED_SLASHES);
