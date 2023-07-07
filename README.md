@@ -24,9 +24,9 @@ defined in the system settings, with no 'helper' mechanisms to search for a valu
 
 
 ## Release History
-***0.1*** - Initial Release (Apr 26, 2022)
-***0.2*** - Add @HIDECHOICE support, Bug Fixes (Sep 6, 2022)
-***0.3*** - Add support for Basic Auth, Add support for display language parameter.
+- ***0.1*** - Initial Release (Apr 26, 2022)
+- ***0.2*** - Add @HIDECHOICE support, Bug Fixes (Sep 6, 2022)
+- ***0.3*** - Add support for Basic Auth, Add support for display language parameter.
 
 ## Using the module
 The module code needs to be placed in a directory `modules/advanced_fhir_ontology_v0.3`
