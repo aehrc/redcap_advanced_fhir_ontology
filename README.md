@@ -286,3 +286,14 @@ letter country abbreviation is used, with extra specificity used given using a d
 english, while `en-AU` would specify the Australian version of english. How the FHIR server will respond to this
 parameter may be different depending on the server. If the language is not available it may just return what it has,
 or it may return no display value, just codes and system.
+
+This setting can be used with the SnomedCT hosted fhir server https://snowstorm-fhir.snomedtools.org/fhir/
+but it is important to specify the edition of snomed to use. Setting a display language of 'es' and using a
+valueset url of http://snomed.info/sct/449081005?fhir_vs will show values in Spanish. But the default edition
+on the server is 900000000000207008 (International Edition) and at the time of writing does not return terms in
+Spanish with the display language set to 'es'. Instead terms are returned with no display and likely will not work
+with the external module. Some of the editions available can be found here: 
+https://confluence.ihtsdotools.org/display/DOCEXTPG/4.4.2+Edition+URI+Examples
+
+For the best result test the url with the display language using postman or a similar tool before setting the values in
+the configuration of this module.
