@@ -225,7 +225,7 @@
     }
   ],
   "compatibility": {
-    "php-version-min": "5.4.0",
+    "php-version-min": "5.5.0",
     "redcap-version-min": "8.8.1"
   }
 }
