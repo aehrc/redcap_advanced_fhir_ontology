@@ -23,9 +23,13 @@ In this plugin, all settings are controlled by the site administrator, each onto
 defined in the system settings, with no 'helper' mechanisms to search for a valueset (hence the advanced label).
 
 
+## Release History
+***0.1*** - Initial Release (Apr 26, 2022)
+***0.2*** - Add @HIDECHOICE support, Bug Fixes (Sep 6, 2022)
+***0.3*** - Add support for Basic Auth, Add support for display language parameter.
 
 ## Using the module
-The module code needs to be placed in a directory `modules/advanced_fhir_ontology_v0.2`
+The module code needs to be placed in a directory `modules/advanced_fhir_ontology_v0.3`
 
 The module should then show up as an external module.
 
@@ -68,14 +72,22 @@ For each ontology the following settings are available.
     `https://r4.ontoserver.csiro.au/fhir` which an Australian server with the Australian edition of SNOMED CT as its 
     default. The server also contains LOINC and other code systems. The following tool can be used to explore a FHIR
     terminology server: ***[Shrimp](https://ontoserver.csiro.au/shrimp)***
-  * ***Authentication Type*** - The authentication to use when communicating with the FHIR server. This can be either `none`
-    or `OAuth2 Client Credentials`. The client credentials flow uses a client id and secret to obtain an access token.
+  * ***Display Language*** - Use alternative display language when making requests to the FHIR server. The value will be
+    used in ValueSet/$expand operations. Supplied value should match BCP-47 standard. For example 'en' for english, 'es'
+    for spanish. Leave blank to use default language of FHIR server.
+  * ***Authentication Type*** - The authentication to use when communicating with the FHIR server. This can be either `none`,
+    `OAuth2 Client Credentials` or `Basic Auth`. The client credentials flow uses a client id and secret to obtain an
+    access token. 
   * ***OAuth2 token endpoint*** - The token endpoint used to obtain the access token. This is required for 
-    `Oauth2 Client Credentials` authentication type.
+    `Oauth2 Client Credentials` authentication type. Required when `Authentication Type` is `OAuth2 Client Credentials`.
   * ***OAuth2 Client Id*** - The client id to use to fetch an access token. This is required for 
-    `Oauth2 Client Credentials` authentication type.
+    `Oauth2 Client Credentials` authentication type. Required when `Authentication Type` is `OAuth2 Client Credentials`.
   * ***OAuth2 Client Secret*** - The client secret to use to fetch an access token. This is required for 
-    `Oauth2 Client Credentials` authentication type.
+    `Oauth2 Client Credentials` authentication type. Required when `Authentication Type` is `OAuth2 Client Credentials`.
+  * ***Basic Auth User Id*** - The user id to pass in an `Authorization: Basic` header when making requests to the FHIR
+    server. Required when `Authentication Type` is `Basic Auth`.
+  * ***Basic Auth User Password*** - The user password to pass in an `Authorization: Basic` header when making requests
+    to the FHIR server. Required when `Authentication Type` is `Basic Auth`.
   * ***ValueSet Type*** - What form the valueset field takes, this can either be `ValueSet URL` in which case the 
     ValueSet setting is the url of the valueset to use. Alternatively the type can be `ValueSet Resource (JSON)` in 
     which case the ValueSet setting should be a JSON representation of the ValueSet Resource. Using a ValueSet resource
@@ -254,7 +266,7 @@ examples the ValueSet includes codes which are childen of `30560011000036108 |tr
 set. With weightings of 0.01, 10.01 and 5.0 respectively, making trade product pack codes of highest importance.
 
 
-### @HIDECHOICE support
+### @HIDECHOICE Support
 As part of the 0.2 release extra functionality has been added to this module for it to consider the `@HIDECHOICE`
 action tag. This action tag is available for choice fields to indicate a choice should not be shown. This
 can be achieved at a global level in this module by using the banned codes settings. The
@@ -265,3 +277,12 @@ field.
 ```text
 @HIDECHOICE='code1,code2'
 ```
+
+### FHIR Display Language Support
+As part of the 0.3 release an extra configuration option `Display Language` has been added. If this is provided it will
+be passed as a parameter to calls to the ValueSet/$expand operation. This parameter specifies the language to be used 
+for description in the expansions. According to the FHIR specification this should follow BCP-47 standard, where a 2
+letter country abbreviation is used, with extra specificity used given using a dash and code. For example `en` is 
+english, while `en-AU` would specify the Australian version of english. How the FHIR server will respond to this
+parameter may be different depending on the server. If the language is not available it may just return what it has,
+or it may return no display value, just codes and system.

@@ -51,8 +51,6 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
     {
         $errors = '';
 
-
-
         $ontologyIds = array();
         $ontologyNames = array();
         $ontologyIdValues = $settings['ontology-id'];
@@ -67,6 +65,8 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
         $authEndpoints = $settings['cc-token-endpoint'];
         $clientIds = $settings['cc-client-id'];
         $clientSecrets = $settings['cc-client-secret'];
+        $basicUserIds = $settings['basic-user-id'];
+        $basicUserPasswords = $settings['basic-user-password'];
         $valueSetTypes = $settings['valueset-type'];
         $valuesets = $settings['valueset'];
         $priorityCodes = $settings['priority-codes'];
@@ -154,11 +154,18 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     // remove trailing /
                     $fhirUrl = substr($fhirUrl, 0, $strlen - 1);
                 }
-                $metadata = $this->httpGet($fhirUrl . '/metadata', ['User-Agent: Redcap']);
+                $headers = ['User-Agent: Redcap'];
+                $authType = $authTypes[$key];
+                if ($authType === 'basic') {
+                    $authUser = $basicUserIds[$key];
+                    $authPassword = $basicUserPasswords[$key];
+                    $headers[] = 'Authorization: Basic ' . base64_encode($authUser . ':' . $authPassword);
+                }
+                $metadata = $this->httpGet($fhirUrl . '/metadata', $headers);
                 if ($metadata === FALSE) {
                     $errors .= "Ontology Id " . $ontologyIdValues[$key] . " - Failed to get metadata for fhir server at '" . $fhirUrl . "'\n";
                 }
-                $authType = $authTypes[$key];
+
                 if ($authType === 'cc') {
                     $authEndpoint = $authEndpoints[$key];
                     $clientId = $clientIds[$key];
@@ -272,6 +279,11 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     $headers[] = 'Authorization: Bearer ' . $authToken;
                 }
             }
+            elseif ('basic' === $fhirAuthType){
+                $userId = $thisCategory['basic-user-id'];
+                $userPassword = $thisCategory['basic-user-password'];
+                $headers[] = 'Authorization: Basic ' . base64_encode($userId . ':' . $userPassword);
+            }
 
             $fhirServerUrl = $thisCategory['fhir-api-url'];
 
@@ -283,12 +295,11 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
 
                 //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
                 // need to escape the $expand in the url!
-                $url = $fhirServerUrl . "/ValueSet/\$expand?" . http_build_query(array(
-                        'url' => $valueSet,
-                        'filter' => $search_term,
-                        'count' => $fetchLimit,
-                        'displayLanguage' => $language === ''?'en':$language
-                    ));
+                $expandParams = ['url' => $valueSet, 'filter' => $search_term, 'count' => $fetchLimit];
+                if (!empty($language)){
+                    $expandParams['displayLanguage'] = $language;
+                }
+                $url = $fhirServerUrl . "/ValueSet/\$expand?" . http_build_query($expandParams);
 
                 $json = $this->httpGet($url, $headers);
             }
@@ -303,9 +314,11 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                         ["name" => "filter", "valueString" => $search_term],
                         ["name" => "_count", "valueInteger" => $fetchLimit],
                         ["name" => "valueSet", "resource" =>  $resource],
-                        ["name" => "displayLanguage", "valueString" =>  $language === ''?'en':$language]
                     ]
                 ];
+                if (!empty($language)){
+                    $postData['parameter'][] = ["name" => 'displayLanguage', "valueCode" => $language];
+                }
                 $postData = json_encode($postData, JSON_UNESCAPED_SLASHES);
 
                 $url = $fhirServerUrl . '/ValueSet/$expand';
