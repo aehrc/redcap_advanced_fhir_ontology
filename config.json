@@ -2,6 +2,7 @@
   "name": "Advanced Fhir Ontology Module",
   "namespace": "AEHRC\\AdvancedFhirOntologyExternalModule",
   "description": "This module provides advanced support for referencing an external Fhir based ontology server to lookup values.",
+  "framework-version": 16,
   "tt_name": "module_name",
   "tt_description": "module_description",
   "tt_documentation": "doc_path",
@@ -11,9 +12,6 @@
       "email": "david.conlan@csiro.au",
       "institution": "Commonwealth Science & Industrial Research Organisation"
     }
-  ],
-  "permissions": [
-    "redcap_every_page_before_render"
   ],
   "enable-every-page-hooks-on-system-pages": false,
   "system-settings": [
@@ -225,7 +223,7 @@
     }
   ],
   "compatibility": {
-    "php-version-min": "5.5.0",
+    "php-version-min": "8.0.0",
     "redcap-version-min": "8.8.1"
   }
 }
