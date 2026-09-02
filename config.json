@@ -16,6 +16,19 @@
   "enable-every-page-hooks-on-system-pages": false,
   "system-settings": [
     {
+      "key": "fhir-timeout",
+      "tt_name": "fhir_timeout",
+      "name": "FHIR request timeout (seconds)",
+      "type": "text",
+      "default": "10"
+    },
+    {
+      "key": "fhir-timeout-info",
+      "tt_name": "fhir_timeout_info",
+      "name": "Maximum number of seconds to wait for any configured FHIR server before giving up. Without a limit a slow or unavailable terminology server will tie up web server processes and can make all of REDCap unresponsive. Leave blank to use the default of 10 seconds. Applies to every ontology category configured below.",
+      "type": "descriptive"
+    },
+    {
       "key": "site-category-list",
       "tt_name": "site_category_list",
       "name": "List of Ontologies for the site",
@@ -140,7 +153,7 @@
           "key": "cc-client-secret",
           "tt_name": "cc_client_secret",
           "name": "OAuth2 Client Secret",
-          "type": "text"
+          "type": "password"
         },
         {
           "key": "basic-user-id",
@@ -152,7 +165,7 @@
           "key": "basic-user-password",
           "tt_name": "basic_user_password",
           "name": "Basic Auth User Password",
-          "type": "text"
+          "type": "password"
         },
         {
           "key": "valueset_info",
