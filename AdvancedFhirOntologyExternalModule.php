@@ -31,6 +31,8 @@ use ExternalModules\ExternalModules;
 
 class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implements \OntologyProvider
 {
+    /** Fallback timeout (seconds) used when the 'fhir-timeout' setting is blank or invalid. */
+    const DEFAULT_TIMEOUT = 10;
 
     public function __construct()
     {
@@ -180,11 +182,15 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     try {
                         $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
                         if ($response === false) {
-                            $r = implode("", $http_response_header);
+                            $r = isset($http_response_header) ? implode("", $http_response_header) : '';
                             $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' response = false, r='" . $r . "'\n";
                         } else {
-                            $responseJson = json_decode($response, true);
-                            if (!array_key_exists('access_token', $responseJson)) {
+                            // a false or unparseable response decodes to null, and array_key_exists(null)
+                            // is a fatal TypeError on PHP 8
+                            $responseJson = is_string($response) ? json_decode($response, true) : null;
+                            if (!is_array($responseJson)) {
+                                $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - no parseable response\n";
+                            } else if (!array_key_exists('access_token', $responseJson)) {
                                 $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "'$response\n";
                             }
                         }
@@ -334,18 +340,22 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
             $bannedCodes = preg_split("/\r\n|\n|\r/", $allBannedCodes);
 
             // Parse the JSON into an array
-            $list = json_decode($json, true);
-            $expansion = $list['expansion'];
-
-            if (is_array($list) && isset($expansion['contains'])) {
+            $list = is_string($json) ? json_decode($json, true) : null;
+            if (is_array($list) && isset($list['expansion']['contains'])) {
+                $expansion = $list['expansion'];
                 // Loop through results
                 $core_results = array();
                 $key_results = array();
                 $hideChoice = $this->getHideChoice();
                 foreach ($expansion['contains'] as $this_item) {
-                    $code = $this_item['code'];
-                    $display = $this_item['display'];
-                    $system = $this_item['system'];
+                    // code, display and system are not guaranteed present by FHIR
+                    $code = isset($this_item['code']) ? $this_item['code'] : '';
+                    $display = isset($this_item['display']) ? $this_item['display'] : $code;
+                    $system = isset($this_item['system']) ? $this_item['system'] : '';
+                    if ('' === $code) {
+                        // nothing storable without a code - skip rather than templating it in
+                        continue;
+                    }
                     if (in_array($code, $bannedCodes)){
                         // code is banned, skip it
                         continue;
@@ -471,11 +481,26 @@ EOD;
 
 
 
+    /**
+     * Maximum number of seconds to wait on the FHIR server. Without a limit a slow
+     * or unavailable server holds a web server process open for the system default,
+     * which can exhaust the pool and take all of REDCap down with it.
+     */
+    public function getFhirTimeout()
+    {
+        $timeout = $this->getSystemSetting('fhir-timeout');
+        if (is_numeric($timeout) && (int)$timeout > 0) {
+            return (int)$timeout;
+        }
+        return self::DEFAULT_TIMEOUT;
+    }
+
     public function httpGet($fullUrl, $headers)
     {
+        $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_get in init_functions doesn't include the headers.
         if (function_exists('curl_init') || empty($headers)) {
-            return http_get($fullUrl, null, '', $headers, null);
+            return http_get($fullUrl, $timeout, '', $headers, null);
         }
         if (ini_get('allow_url_fopen')) {
             // Set http array for file_get_contents
@@ -483,7 +508,7 @@ EOD;
             foreach ($headers as $hvalue) {
                 $headerText .= $hvalue . "\r\n";
             }
-            $http_array = array('method' => 'GET', 'header' => $headerText);
+            $http_array = array('method' => 'GET', 'header' => $headerText, 'timeout' => $timeout);
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
                 $http_array['proxy'] = str_replace(array('http://', 'https://'), array('tcp://', 'tcp://'), PROXY_HOSTNAME);
@@ -508,16 +533,17 @@ EOD;
 
     public function httpPost($fullUrl, $postData, $contentType, $headers)
     {
+        $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_post in init_functions doesn't include the headers.
         // but the curl version will overwrite the content type header if other headers are included.
         if (function_exists('curl_init') && !empty($headers)
             && $contentType && $contentType != 'application/x-www-form-urlencoded'){
             $fullHeaders = $headers;
             $fullHeaders[] = 'Content-type: '.$contentType;
-            return http_post($fullUrl, $postData, null, $contentType, '', $fullHeaders);
+            return http_post($fullUrl, $postData, $timeout, $contentType, '', $fullHeaders);
         }
         else if (function_exists('curl_init') || empty($headers)) {
-            return http_post($fullUrl, $postData, null, $contentType, '', $headers);
+            return http_post($fullUrl, $postData, $timeout, $contentType, '', $headers);
         }
         // If params are given as an array, then convert to query string format, else leave as is
         if ($contentType == 'application/json') {
@@ -540,7 +566,8 @@ EOD;
 
             $http_array = array('method' => 'POST',
                 'header' => "Content-type: $contentType" . "\r\n" . $headerText . "Content-Length: " . strlen($param_string) . "\r\n",
-                'content' => $param_string
+                'content' => $param_string,
+                'timeout' => $timeout
             );
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
@@ -570,8 +597,8 @@ EOD;
     public function getClientCredentialsToken($category, $tokenEndpoint, $clientId, $clientSecret)
     {
         $now = time();
-        $expireKey = 'ADVFHIR_' + $tokenEndpoint + '_TOKEN_EXPIRES';
-        $tokenKey = 'ADVFHIR_' + $tokenEndpoint + '_TOKEN';
+        $expireKey = 'ADVFHIR_' . $tokenEndpoint . '_TOKEN_EXPIRES';
+        $tokenKey = 'ADVFHIR_' . $tokenEndpoint . '_TOKEN';
         if (array_key_exists($expireKey, $_SESSION) &&
             array_key_exists($tokenKey, $_SESSION)) {
             $expire = $_SESSION[$expireKey];
@@ -590,15 +617,27 @@ EOD;
         $clear = true;
         try {
             $response = $this->httpPost($tokenEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
-            $responseJson = json_decode($response, true);
-            if (array_key_exists('access_token', $responseJson)) {
+            // a false or unparseable response decodes to null, and array_key_exists(null)
+            // is a fatal TypeError on PHP 8
+            $responseJson = is_string($response) ? json_decode($response, true) : null;
+            if (!is_array($responseJson)) {
+                error_log("Failed to negotiate auth token : no parseable response from " . $tokenEndpoint);
+            } elseif (array_key_exists('access_token', $responseJson)) {
                 $clear = false;
                 $_SESSION[$tokenKey] = $responseJson['access_token'];
-                if (array_key_exists('expires_in', $responseJson)) {
-                    $_SESSION[$expireKey] = $now + ($responseJson['expires_in'] * 1000);
-                } else {
-                    $_SESSION[$expireKey] = $now + (60 * 60 * 1000);
+                // expires_in is SECONDS (RFC 6749) and $now is seconds - the previous
+                // * 1000 cached a 3600s token for roughly 41 days. Renew early by
+                // margin = min(60, floor(lifetime / 2)): a minute early for normal
+                // lifetimes, halfway through for very short ones, and never an expiry
+                // beyond the real one.
+                $lifetime = array_key_exists('expires_in', $responseJson)
+                    ? (int)$responseJson['expires_in']
+                    : 3600;
+                if ($lifetime < 1) {
+                    $lifetime = 1;
                 }
+                $margin = (int)min(60, floor($lifetime / 2));
+                $_SESSION[$expireKey] = $now + $lifetime - $margin;
             } elseif (array_key_exists('error', $responseJson)) {
                 error_log("Failed to negotiate auth token : " . $responseJson['error'] . " - " . $responseJson['error_description']);
             } else {
