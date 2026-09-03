@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/aehrc/redcap_advanced_fhir_ontology/compare/v0.3.0...v0.3.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* security and performance remediation ([#7](https://github.com/aehrc/redcap_advanced_fhir_ontology/issues/7)) ([cd67f4c](https://github.com/aehrc/redcap_advanced_fhir_ontology/commit/cd67f4c598d7881ebc4642b0a8abda27542c3014))
+
 ## [0.3] - 2023-07-07
 - Add support for Basic Auth as an authentication type for the FHIR server
 - Add support for a display language parameter, passed to `ValueSet/$expand`
