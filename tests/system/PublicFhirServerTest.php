@@ -47,7 +47,7 @@ final class PublicFhirServerTest extends TestCase
 
     protected function setUp(): void
     {
-        if (!function_exists(__NAMESPACE__ . '\\realHttpTimeoutSeconds')) {
+        if (!function_exists(__NAMESPACE__ . '\\usingRealHttpTransport')) {
             $this->fail(
                 'RealHttpFunctions.php was not loaded, so http_get()/http_post() are ' .
                 'still the unit suite\'s fakes. Run this suite via ' .
@@ -59,6 +59,12 @@ final class PublicFhirServerTest extends TestCase
         // Same process-wide singleton issue as the unit suite - reset before
         // constructing so this doesn't accumulate across tests/runs either.
         \OntologyManager::resetForTests();
+
+        // Dormant today (both tests use authentication-type 'none'), but
+        // getClientCredentialsToken() caches OAuth tokens into $_SESSION keyed
+        // by token endpoint - without this, a token cached by one test would
+        // leak into a later one the moment a 'cc'/'basic' test is added.
+        $_SESSION = [];
     }
 
     private function category(string $fhirApiUrl, array $overrides = []): array

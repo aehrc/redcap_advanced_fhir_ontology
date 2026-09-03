@@ -15,9 +15,25 @@ namespace AEHRC\AdvancedFhirOntologyExternalModule {
      * implementation instead of a fake one.
      */
 
+    /**
+     * Dedicated marker for PublicFhirServerTest's "was the right bootstrap
+     * loaded" guard - deliberately not piggybacking on realHttpTimeoutSeconds()
+     * or any other helper below, so refactoring this file's internals can never
+     * silently break that guard.
+     */
+    function usingRealHttpTransport()
+    {
+        return true;
+    }
+
     function realHttpTimeoutSeconds($timeout)
     {
-        return is_numeric($timeout) ? (int)$timeout : 30;
+        $seconds = is_numeric($timeout) ? (int)$timeout : 30;
+        // 0 (or negative) reaching curl means "never time out" - the opposite of
+        // what a bounded, non-blocking system-test job needs. Not reachable via
+        // the module's own getFhirTimeout() (which already guards this), but
+        // this helper shouldn't rely on every caller doing that.
+        return $seconds > 0 ? $seconds : 30;
     }
 
     function http_get($url, $timeout = null, $basic_auth_user_pass = '', $headers = [], $user_agent = null)
@@ -54,10 +70,17 @@ namespace AEHRC\AdvancedFhirOntologyExternalModule {
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
-        // Passing an array straight to CURLOPT_POSTFIELDS makes curl build a
-        // multipart/form-data body regardless of $content_type - build the
-        // string ourselves so the body actually matches the declared type.
-        curl_setopt($ch, CURLOPT_POSTFIELDS, is_array($postData) ? http_build_query($postData) : $postData);
+        // Encode to match the declared content type rather than always
+        // form-encoding an array body - not reachable via the module's current
+        // two call sites (they always pair array+form-urlencoded or
+        // json-string+application/json), but a mismatched body/Content-Type
+        // shouldn't be possible to construct here even for a future caller.
+        if (is_array($postData)) {
+            $body = $content_type === 'application/json' ? json_encode($postData) : http_build_query($postData);
+        } else {
+            $body = $postData;
+        }
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
         $seconds = realHttpTimeoutSeconds($timeout);
         curl_setopt($ch, CURLOPT_TIMEOUT, $seconds);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $seconds);
