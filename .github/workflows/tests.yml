@@ -9,6 +9,7 @@ jobs:
   phpunit:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         # PHPUnit 11 requires PHP >=8.2, so this can't cover the module's
         # declared php-version-min (8.0.0) - that's checked separately below

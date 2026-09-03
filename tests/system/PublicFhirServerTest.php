@@ -31,6 +31,13 @@ final class PublicFhirServerTest extends TestCase
      *  to exist and have descendants on any real SNOMED CT terminology server. */
     private const SNOMED_ISA_VALUESET = 'http://snomed.info/sct?fhir_vs=isa/404684003';
 
+    protected function setUp(): void
+    {
+        // Same process-wide singleton issue as the unit suite - reset before
+        // constructing so this doesn't accumulate across tests/runs either.
+        \OntologyManager::resetForTests();
+    }
+
     private function category(string $fhirApiUrl): array
     {
         return [

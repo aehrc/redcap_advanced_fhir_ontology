@@ -43,12 +43,24 @@ namespace AEHRC\AdvancedFhirOntologyExternalModule {
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+        // Passing an array straight to CURLOPT_POSTFIELDS makes curl build a
+        // multipart/form-data body regardless of $content_type - build the
+        // string ourselves so the body actually matches the declared type.
+        curl_setopt($ch, CURLOPT_POSTFIELDS, is_array($postData) ? http_build_query($postData) : $postData);
         $seconds = is_numeric($timeout) ? (int)$timeout : 30;
         curl_setopt($ch, CURLOPT_TIMEOUT, $seconds);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $seconds);
         $fullHeaders = $headers;
-        $fullHeaders[] = 'Content-Type: ' . $content_type;
+        $hasContentType = false;
+        foreach ($headers as $header) {
+            if (stripos($header, 'content-type:') === 0) {
+                $hasContentType = true;
+                break;
+            }
+        }
+        if (!$hasContentType) {
+            $fullHeaders[] = 'Content-Type: ' . $content_type;
+        }
         curl_setopt($ch, CURLOPT_HTTPHEADER, $fullHeaders);
         if ($basic_auth_user_pass !== '') {
             curl_setopt($ch, CURLOPT_USERPWD, $basic_auth_user_pass);
