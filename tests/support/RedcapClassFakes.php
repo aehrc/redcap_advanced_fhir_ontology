@@ -73,6 +73,14 @@ namespace {
             return self::$instance ??= new self();
         }
 
+        /** Test-only: the real framework has no equivalent - this is a process-wide
+         *  singleton, so without a reset every test's module registers into the
+         *  same $providers list for the lifetime of the PHPUnit run. */
+        public static function resetForTests(): void
+        {
+            self::$instance = null;
+        }
+
         public function addProvider($provider): void
         {
             $this->providers[] = $provider;
