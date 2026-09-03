@@ -4,5 +4,6 @@
 // OAuth2 token caching reads/writes it directly.
 $_SESSION = $_SESSION ?? [];
 
-require_once __DIR__ . '/support/RedcapFakes.php';
+require_once __DIR__ . '/support/RedcapClassFakes.php';
+require_once __DIR__ . '/support/FakeHttpTransport.php';
 require_once __DIR__ . '/../AdvancedFhirOntologyExternalModule.php';
