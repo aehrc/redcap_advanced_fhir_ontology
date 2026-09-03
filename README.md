@@ -22,16 +22,46 @@ codes from more then one code system, and a code + system is required to uniquel
 In this plugin, all settings are controlled by the site administrator, each ontology that is available must be fully
 defined in the system settings, with no 'helper' mechanisms to search for a valueset (hence the advanced label).
 
+### Version 0.4 changes
+
+This is a security and performance release, carried over from the same audit applied to the
+[Fhir Ontology Autocomplete Module](https://github.com/aehrc/redcap_fhir_ontology_provider). There are no new features.
+
+- ***Requests to the FHIR server now time out*** - A new site-wide `FHIR request timeout (seconds)` setting (default 10)
+  bounds how long REDCap waits for any configured FHIR server or OAuth2 token endpoint. Previously there was no limit, so
+  a slow or restarting server could hold web server processes open and make all of REDCap unresponsive.
+- ***Fixed OAuth2 client-credentials authentication crashing on PHP 8*** - `getClientCredentialsToken()` built its session
+  cache keys with the `+` operator instead of `.` (string concatenation), which throws a fatal error on PHP 8. Any
+  ontology category using `OAuth2 Client Credentials` authentication would fail outright. Fixed to use `.`.
+- ***Fixed OAuth2 token expiry calculation*** - Token lifetimes were treated as milliseconds rather than seconds, so an
+  expired token could be reused for weeks, causing lookups to fail silently. Tokens are now also renewed slightly before
+  their real expiry rather than exactly at it.
+- ***Credential fields now masked in the configuration page*** - The OAuth2 Client Secret and Basic Auth User Password
+  fields now render masked instead of in plain text. **This is display masking only** - it does not encrypt the value at
+  rest; the External Modules framework still stores these as plain text. The stored value does **not** migrate: after
+  upgrading, re-enter the client secret / password for each ontology category, or lookups will fail silently (an empty
+  result list with no error shown).
+- ***More robust error handling*** - Responses that are not valid JSON, and expansions missing `code`, `display`, or
+  `system`, are now handled explicitly instead of producing PHP warnings or storing a malformed code.
+
+**Deploying:** place this version in a new directory `modules/advanced_fhir_ontology_v0.4` alongside the existing
+version rather than overwriting it, and re-enter any OAuth2 Client Secret / Basic Auth User Password values after
+switching to it.
 
 ## Release History
 - ***0.1*** - Initial Release (Apr 26, 2022)
 - ***0.2*** - Add @HIDECHOICE support, Bug Fixes (Sep 6, 2022)
 - ***0.3*** - Add support for Basic Auth, Add support for display language parameter.
+- ***0.4*** - Security and performance release: FHIR request timeout, OAuth2 PHP 8 crash fix, OAuth2 token expiry fix,
+  credential masking, more robust error handling.
 
 ## Using the module
-The module code needs to be placed in a directory `modules/advanced_fhir_ontology_v0.3`
+The module code needs to be placed in a directory `modules/advanced_fhir_ontology_v0.4`
 
 The module should then show up as an external module.
+
+The module has one site-wide setting, ***FHIR request timeout (seconds)***, applied to every configured ontology
+category - see Version 0.4 changes above.
 
 The module settings defines a list of site ontologies. There is a `+` button for adding additional ontologies.
 
