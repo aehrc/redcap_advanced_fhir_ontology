@@ -266,7 +266,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
         // Set 20 as default limit
         $result_limit = (is_numeric($result_limit) ? $result_limit : 20);
 
-        if ($thisCategory != null){
+        if ($thisCategory !== null){
 
             $priorityFetchAdd = $thisCategory['priority-max-fetch'];
             $fetchLimit = $result_limit + ($priorityFetchAdd ? (int)$priorityFetchAdd : 0);

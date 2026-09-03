@@ -10,6 +10,10 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
 
     protected function setUp(): void
     {
+        // OntologyManager is a process-wide singleton in the real framework too;
+        // reset before constructing so each test's module doesn't pile onto every
+        // prior test's registration for the lifetime of the PHPUnit run.
+        \OntologyManager::resetForTests();
         $this->module = new AdvancedFhirOntologyExternalModule();
         FakeHttpTransport::reset();
         $_SESSION = [];
@@ -129,6 +133,23 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $results = $this->module->searchOntology('does-not-exist', 'term', 20);
 
         $this->assertSame([], $results);
+    }
+
+    public function testSearchOntologyReturnsConfiguredNoResultFallbackForKnownEmptyCategory(): void
+    {
+        $this->module->subSettings['site-category-list'] = [$this->category([
+            'return-no-result' => true,
+            'no-result-label' => 'No Results Found',
+            'no-result-code' => '_NRF_',
+        ])];
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $results = $this->module->searchOntology('test-cat', 'term', 20);
+
+        // Distinguishes this from the unknown-category case above: a *known*
+        // category with zero real matches should still get its configured
+        // fallback, not just an empty result.
+        $this->assertSame(['_NRF_' => 'No Results Found'], $results);
     }
 
     public function testSearchOntologySkipsEntriesWithNoCodeAndDefaultsMissingDisplayToCode(): void
