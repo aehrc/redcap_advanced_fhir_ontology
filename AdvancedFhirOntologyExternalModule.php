@@ -268,7 +268,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
 
         if ($thisCategory != null){
 
-            $priorityFetchAdd = $thisCategory['$priority-max-fetch'];
+            $priorityFetchAdd = $thisCategory['priority-max-fetch'];
             $fetchLimit = $result_limit + ($priorityFetchAdd ? (int)$priorityFetchAdd : 0);
 
             $headers = ['User-Agent: Redcap'];
@@ -386,8 +386,9 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
         }
 
 
-        if (!$results) {
-            // no results found
+        if (!$results && $thisCategory !== null) {
+            // no results found - unknown category already returns empty above,
+            // nothing to fall back to
             $return_no_result = $thisCategory['return-no-result'];
             if ($return_no_result) {
                 $no_result_label = $thisCategory['no-result-label'];
