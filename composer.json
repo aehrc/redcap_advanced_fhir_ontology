@@ -1,0 +1,8 @@
+{
+    "name": "aehrc/redcap-advanced-fhir-ontology",
+    "description": "REDCap external module providing advanced, per-category FHIR-based ontology autocomplete",
+    "type": "project",
+    "require-dev": {
+        "vimeo/psalm": "^6.16"
+    }
+}
