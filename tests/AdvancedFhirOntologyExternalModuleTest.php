@@ -214,4 +214,27 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->assertCount(1, FakeHttpTransport::$calls);
         $this->assertSame(7, FakeHttpTransport::$calls[0]['timeout']);
     }
+
+    // --- getOnlineDesignerSection() ---
+    // Regression coverage for the js/online-designer.js extraction: this
+    // method's heredoc was never exercised by any test before, so a broken
+    // interpolation or an inline <script> creeping back in would only have
+    // been caught by a manual browser check.
+
+    public function testOnlineDesignerSectionLoadsExtractedJsFileNotInlineScript(): void
+    {
+        $html = $this->module->getOnlineDesignerSection();
+
+        $this->assertStringContainsString('<script src="FAKE_MODULE_URL/js/online-designer.js"></script>', $html);
+        $this->assertStringNotContainsString('function ADVFHIR_ontology_changed', $html);
+    }
+
+    public function testOnlineDesignerSectionListsConfiguredCategories(): void
+    {
+        $this->module->subSettings['site-category-list'] = [$this->category(['ontology-id' => 'cat1', 'ontology-name' => 'Category One'])];
+
+        $html = $this->module->getOnlineDesignerSection();
+
+        $this->assertStringContainsString("<option value='cat1'>Category One</option>", $html);
+    }
 }

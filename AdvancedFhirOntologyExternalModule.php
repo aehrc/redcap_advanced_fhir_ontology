@@ -454,14 +454,9 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
             $categoryList .= "<option value='{$category}'>{$name}</option>\n";
         }
 
+        $onlineDesignerJsUrl = $this->getUrl('js/online-designer.js');
         $onlineDesignerHtml = <<<EOD
-<script type="text/javascript">
-  function ADVFHIR_ontology_changed(service, category){
-    var newSelection = ('ADVFHIR' === service) ? category : '';
-    $('#advfhir_ontology_category').val(newSelection);
-  }
-  
-</script>
+<script src="{$onlineDesignerJsUrl}"></script>
 <div style='margin-bottom:3px;'>
   Select Advanced FHIR Ontology to use:
 </div>
