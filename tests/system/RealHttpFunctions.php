@@ -15,12 +15,17 @@ namespace AEHRC\AdvancedFhirOntologyExternalModule {
      * implementation instead of a fake one.
      */
 
+    function realHttpTimeoutSeconds($timeout)
+    {
+        return is_numeric($timeout) ? (int)$timeout : 30;
+    }
+
     function http_get($url, $timeout = null, $basic_auth_user_pass = '', $headers = [], $user_agent = null)
     {
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        $seconds = is_numeric($timeout) ? (int)$timeout : 30;
+        $seconds = realHttpTimeoutSeconds($timeout);
         curl_setopt($ch, CURLOPT_TIMEOUT, $seconds);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $seconds);
         if (!empty($headers)) {
@@ -33,7 +38,13 @@ namespace AEHRC\AdvancedFhirOntologyExternalModule {
             curl_setopt($ch, CURLOPT_USERAGENT, $user_agent);
         }
         $response = curl_exec($ch);
-        $failed = curl_errno($ch) !== 0;
+        // A non-2xx response (error page, OperationOutcome, rate-limiting) is not
+        // a curl-level failure - curl_errno stays 0 - but it's not usable data
+        // either. Treating it as success would let searchOntology() silently
+        // return [] with no signal of *why*, indistinguishable from a real
+        // regression or a genuinely empty match set.
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $failed = curl_errno($ch) !== 0 || $httpCode < 200 || $httpCode >= 300;
         curl_close($ch);
         return $failed ? false : $response;
     }
@@ -47,7 +58,7 @@ namespace AEHRC\AdvancedFhirOntologyExternalModule {
         // multipart/form-data body regardless of $content_type - build the
         // string ourselves so the body actually matches the declared type.
         curl_setopt($ch, CURLOPT_POSTFIELDS, is_array($postData) ? http_build_query($postData) : $postData);
-        $seconds = is_numeric($timeout) ? (int)$timeout : 30;
+        $seconds = realHttpTimeoutSeconds($timeout);
         curl_setopt($ch, CURLOPT_TIMEOUT, $seconds);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $seconds);
         $fullHeaders = $headers;
@@ -67,7 +78,8 @@ namespace AEHRC\AdvancedFhirOntologyExternalModule {
         }
         $response = curl_exec($ch);
         $info = curl_getinfo($ch);
-        $failed = curl_errno($ch) !== 0;
+        $httpCode = (int)($info['http_code'] ?? 0);
+        $failed = curl_errno($ch) !== 0 || $httpCode < 200 || $httpCode >= 300;
         curl_close($ch);
         return $failed ? false : $response;
     }
