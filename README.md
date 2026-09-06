@@ -3,6 +3,11 @@
 The sections below give the full story behind each version's changes - why, not just what. For a terser,
 automatically generated commit-by-commit record, see [CHANGELOG.md](./CHANGELOG.md).
 
+## Requirements
+
+- PHP 8.0.0 or later
+- REDCap 8.8.1 or later, on External Module framework version 16 or later
+
 As part of release 8.8.1 of REDCap an extension point was added to allow external modules to become an 
 *'Ontology Provider'*. These act like the existing BioPortal ontology mechanism, but allow alternative sources.
 The main function of an ontology provider is to take a search term and return some match of code + display.
