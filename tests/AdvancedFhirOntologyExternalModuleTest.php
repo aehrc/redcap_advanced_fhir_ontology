@@ -285,6 +285,34 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->assertSame('term', $query['filter']);
     }
 
+    public function testSearchOntologyWithoutReturnAllPreservesServerOrderEvenForNonSubstringMatches(): void
+    {
+        // Regression: the match-key ranking must only apply when return-all is
+        // set. The real FHIR server's filter doesn't do literal substring
+        // matching (e.g. filter=heart attack legitimately returns "Myocardial
+        // infarction", its real synonym, with no literal "heart"/"attack" in
+        // the display) - applying stripos()-based ranking unconditionally
+        // would demote a legitimately-relevant server match behind a less
+        // relevant one that merely contains the literal substring, silently
+        // degrading the server's own relevance ranking for every normal
+        // search, not just return-all's.
+        $this->module->subSettings['site-category-list'] = [$this->category()];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Myocardial infarction'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Fear of heart attack'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('test-cat', 'heart attack', 20);
+
+        // Server-returned order must be preserved - C1 first, despite not
+        // containing the literal search term anywhere.
+        $this->assertSame(['C1', 'C2'], array_keys($results));
+    }
+
     public function testSearchOntologyReturnAllRanksMatchesFirst(): void
     {
         $this->module->subSettings['site-category-list'] = [$this->category(['return-all' => true])];

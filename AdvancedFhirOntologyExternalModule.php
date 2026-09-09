@@ -398,7 +398,21 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                         $sortKey = count($priorityCodes);
                     }
                     $key_results[] = $sortKey;
-                    $isMatch = ($search_term === '')
+                    // Only computed for return-all: confirmed live against the real
+                    // Ontoserver that filter=... does not do literal substring
+                    // matching - a filter for "heart attack" legitimately returns
+                    // "Myocardial infarction" (its real synonym), which this stripos()
+                    // check would never recognize as a match. Applying this ranking
+                    // unconditionally would silently demote that legitimately-relevant,
+                    // server-matched result behind a less relevant one that merely
+                    // contains the literal substring (e.g. "Fear of heart attack") -
+                    // degrading the server's own relevance ranking for every normal
+                    // (non-return-all) search, not just return-all's. With return-all,
+                    // there's no server-side relevance signal to preserve in the first
+                    // place (filter was omitted entirely), so this local heuristic is
+                    // the only ranking available and only applies there.
+                    $isMatch = !$returnAll
+                        || ($search_term === '')
                         || (stripos($code, $search_term) !== false)
                         || (stripos($display, $search_term) !== false);
                     $matchKey_results[] = $isMatch ? 0 : 1;
