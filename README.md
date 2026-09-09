@@ -20,6 +20,8 @@ It allows:
  - The ability to ban certain codes, so they are never returned.
  - The ability to mark certain codes as priority, so they will appear earlier on the search results.
  - A template for defining the code and display used by the ontology.
+ - The ability to browse a small, fully-enumerated ValueSet's full contents instead of requiring the typed text to
+   match the server's wording.
 
 The original FHIR ontology external module provides code for searching for FHIR valuesets, mapping a single ontology
 to the valueset url. This allows for easier finding and setting of a valueset to use, but most other settings are defined
@@ -98,6 +100,13 @@ For each ontology the following settings are available.
         making the code + system required for a unique coding. If the valueset being used only contains values from a single
         code system, the system could be removed from the template.
       * ***${DISPLAY}*** - The dislay for the value.
+  * ***Return all values regardless of search text*** - Browse a short, fully-enumerated ValueSet without needing to
+    guess its exact wording: instead of sending the typed text to the FHIR server as a `filter`, the field's search
+    fetches the ValueSet's full/default expansion and ranks entries locally, matching ones first. Intended only for
+    small ValueSets - it fetches the entire expansion on every search keystroke, so setting it on a large ValueSet
+    (SNOMED CT, etc.) would be slow and wasteful. See
+    [Return all values regardless of search text](#return-all-values-regardless-of-search-text) below for the full
+    explanation, including its interaction with `Return 'No Results Found'`.
   * ***Return 'No Results Found'*** - A flag to indicate if a special 'No Result Found' should be returned if the search
     finds no matches. If this is selected then the `"No Result Label"` and `"No Result Code"` settings are required. A
     no result found code is useful to create branching logic to allow for the entry of a free text value if no associated
