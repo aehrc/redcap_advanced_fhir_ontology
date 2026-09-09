@@ -17,6 +17,10 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->module = new AdvancedFhirOntologyExternalModule();
         FakeHttpTransport::reset();
         $_SESSION = [];
+        \REDCap::$getDataDictionaryCallCount = 0;
+        \REDCap::$dataDictionary = [];
+        unset($_GET['field'], $_GET['pid']);
+        $GLOBALS['Proj'] = null;
     }
 
     /** Minimal valid category row; each test overrides only what it cares about. */
@@ -203,6 +207,127 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->assertSame('25', $query['count'], 'result_limit (20) + priority-max-fetch (5) should be requested');
     }
 
+    public function testSearchOntologyUrlRequestSendsCountNotUnderscoreCount(): void
+    {
+        // $expand is a FHIR *operation*, not a plain resource search - its count
+        // parameter is 'count', not '_count' (the REST search-result modifier
+        // used by plain searches). Confirmed live: Ontoserver silently ignores
+        // '_count' here rather than rejecting the request, so it has no effect.
+        $this->module->subSettings['site-category-list'] = [$this->category()];
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->searchOntology('test-cat', 'term', 20);
+
+        parse_str(parse_url(FakeHttpTransport::$calls[0]['url'], PHP_URL_QUERY), $query);
+        $this->assertArrayHasKey('count', $query);
+        $this->assertArrayNotHasKey('_count', $query);
+    }
+
+    public function testSearchOntologyJsonRequestSendsCountNotUnderscoreCount(): void
+    {
+        $this->module->subSettings['site-category-list'] = [$this->category([
+            'valueset-type' => 'resource',
+            'valueset' => json_encode(['resourceType' => 'ValueSet']),
+        ])];
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->searchOntology('test-cat', 'term', 20);
+
+        $sentParams = json_decode(FakeHttpTransport::$calls[0]['params'], true);
+        $names = array_column($sentParams['parameter'], 'name');
+        $this->assertContains('count', $names);
+        $this->assertNotContains('_count', $names);
+    }
+
+    // --- return-all ---
+    // Without this option, an entry matching none of the search words is
+    // dropped entirely by the FHIR server's own filter - fine for a large
+    // list, but for a short, fully-enumerated one (e.g. a frequency scale) it
+    // means a user must already know a value's exact wording to find it at
+    // all. With it set, the filter is omitted from the request (fetching the
+    // full/default expansion instead) and matches are ranked locally.
+
+    public function testSearchOntologyReturnAllOmitsFilterFromUrlRequest(): void
+    {
+        $this->module->subSettings['site-category-list'] = [$this->category(['return-all' => true])];
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->searchOntology('test-cat', 'term', 20);
+
+        parse_str(parse_url(FakeHttpTransport::$calls[0]['url'], PHP_URL_QUERY), $query);
+        $this->assertArrayNotHasKey('filter', $query);
+    }
+
+    public function testSearchOntologyReturnAllOmitsFilterFromJsonRequest(): void
+    {
+        $this->module->subSettings['site-category-list'] = [$this->category([
+            'return-all' => true,
+            'valueset-type' => 'resource',
+            'valueset' => json_encode(['resourceType' => 'ValueSet']),
+        ])];
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->searchOntology('test-cat', 'term', 20);
+
+        $sentParams = json_decode(FakeHttpTransport::$calls[0]['params'], true);
+        $names = array_column($sentParams['parameter'], 'name');
+        $this->assertNotContains('filter', $names);
+    }
+
+    public function testSearchOntologyWithoutReturnAllStillSendsFilter(): void
+    {
+        $this->module->subSettings['site-category-list'] = [$this->category()];
+        FakeHttpTransport::$response = json_encode(['expansion' => ['contains' => []]]);
+
+        $this->module->searchOntology('test-cat', 'term', 20);
+
+        parse_str(parse_url(FakeHttpTransport::$calls[0]['url'], PHP_URL_QUERY), $query);
+        $this->assertSame('term', $query['filter']);
+    }
+
+    public function testSearchOntologyReturnAllRanksMatchesFirst(): void
+    {
+        $this->module->subSettings['site-category-list'] = [$this->category(['return-all' => true])];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Never'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Rarely'],
+                    ['code' => 'C3', 'system' => 'sys', 'display' => 'Weekly'],
+                ],
+            ],
+        ]);
+
+        $results = $this->module->searchOntology('test-cat', 'week', 20);
+
+        // 'week' only matches "Weekly" - it must sort first despite not
+        // being the first entry the server returned, with the rest keeping
+        // their original relative order after it.
+        $this->assertSame(['C3', 'C1', 'C2'], array_keys($results));
+    }
+
+    public function testSearchOntologyReturnAllStillPrioritizesPriorityCodesFirst(): void
+    {
+        $this->module->subSettings['site-category-list'] = [$this->category([
+            'return-all' => true,
+            'priority-codes' => 'C2',
+        ])];
+        FakeHttpTransport::$response = json_encode([
+            'expansion' => [
+                'contains' => [
+                    ['code' => 'C1', 'system' => 'sys', 'display' => 'Weekly'],
+                    ['code' => 'C2', 'system' => 'sys', 'display' => 'Monthly'],
+                ],
+            ],
+        ]);
+
+        // Search term matches C1's display ("Weekly") but C2 is the priority code.
+        $results = $this->module->searchOntology('test-cat', 'week', 20);
+
+        // Priority (C2) must still sort first, even though it doesn't match the term.
+        $this->assertSame(['C2', 'C1'], array_keys($results));
+    }
+
     public function testSearchOntologyThreadsConfiguredTimeoutIntoTheHttpCall(): void
     {
         $this->module->systemSettings['fhir-timeout'] = '7';
@@ -213,6 +338,83 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
 
         $this->assertCount(1, FakeHttpTransport::$calls);
         $this->assertSame(7, FakeHttpTransport::$calls[0]['timeout']);
+    }
+
+    // --- getHideChoice() / getFieldAnnotation() ---
+    // Regression coverage: an earlier version of getFieldAnnotation() (a) never
+    // pulled $Proj in via `global $Proj;` at all, so the in-memory fast path
+    // could never run (every request fell through to a full dictionary reload,
+    // or silently found nothing if $_GET['pid'] wasn't set), and (b) read the
+    // wrong key even when it did - $Proj->metadata[$field] stores the
+    // annotation under the raw DB column name 'misc', not 'field_annotation'
+    // (that name only exists in getDataDictionary()'s own returned array).
+    // Confirmed live: @HIDECHOICE had silently never worked from a real
+    // request despite being saved correctly, because of exactly this.
+
+    public function testGetHideChoiceUsesInMemoryProjectMetadataFastPath(): void
+    {
+        $project = new \Project();
+        $project->project_id = '17';
+        $project->metadata['my_field']['misc'] = "@HIDECHOICE='A,B'";
+        $GLOBALS['Proj'] = $project;
+        $_GET['field'] = 'my_field';
+        $_GET['pid'] = '17';
+
+        $hidden = $this->module->getHideChoice();
+
+        $this->assertSame(['A', 'B'], $hidden);
+        $this->assertSame(0, \REDCap::$getDataDictionaryCallCount, 'the in-memory fast path must not fall through to getDataDictionary()');
+    }
+
+    public function testGetHideChoiceFallsBackToDataDictionaryWhenProjMismatchesRequestedPid(): void
+    {
+        $project = new \Project();
+        $project->project_id = '17'; // a different project than requested
+        $project->metadata['my_field']['misc'] = "@HIDECHOICE='WRONG'";
+        $GLOBALS['Proj'] = $project;
+        \REDCap::$dataDictionary = ['my_field' => ['field_annotation' => "@HIDECHOICE='A'"]];
+        $_GET['field'] = 'my_field';
+        $_GET['pid'] = '99';
+
+        $hidden = $this->module->getHideChoice();
+
+        $this->assertSame(['A'], $hidden);
+        $this->assertSame(1, \REDCap::$getDataDictionaryCallCount);
+    }
+
+    public function testGetHideChoiceReturnsEmptyWhenNoFieldRequested(): void
+    {
+        $this->assertSame([], $this->module->getHideChoice());
+    }
+
+    // --- @ADVANCED-FHIR-ONTOLOGY-HIDECHOICE ---
+    // A second, non-colliding tag name for the same purpose as @HIDECHOICE -
+    // @HIDECHOICE is also REDCap's own built-in action tag (for a different
+    // purpose, on real choice fields), so a module tag reusing that name can
+    // never be registered in REDCap's own "@ Action Tags" popup.
+
+    public function testGetHideChoiceRecognizesAdvancedFhirOntologyHideChoiceTag(): void
+    {
+        $project = new \Project();
+        $project->metadata['my_field']['misc'] = "@ADVANCED-FHIR-ONTOLOGY-HIDECHOICE='X,Y'";
+        $GLOBALS['Proj'] = $project;
+        $_GET['field'] = 'my_field';
+
+        $hidden = $this->module->getHideChoice();
+
+        $this->assertSame(['X', 'Y'], $hidden);
+    }
+
+    public function testGetHideChoiceMergesBothTagNamesWhenBothPresent(): void
+    {
+        $project = new \Project();
+        $project->metadata['my_field']['misc'] = "@HIDECHOICE='A' @ADVANCED-FHIR-ONTOLOGY-HIDECHOICE='B'";
+        $GLOBALS['Proj'] = $project;
+        $_GET['field'] = 'my_field';
+
+        $hidden = $this->module->getHideChoice();
+
+        $this->assertSame(['A', 'B'], $hidden);
     }
 
     // --- getOnlineDesignerSection() ---

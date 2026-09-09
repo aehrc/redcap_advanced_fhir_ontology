@@ -54,9 +54,17 @@ namespace {
             return htmlspecialchars((string)$value, ENT_QUOTES);
         }
 
+        /** @var int Call counter so tests can assert the $Proj fast path in
+         *  getFieldAnnotation() avoided this full-dictionary-reload path. */
+        public static int $getDataDictionaryCallCount = 0;
+
+        /** @var array Canned return value for getDataDictionary(), settable per test. */
+        public static array $dataDictionary = [];
+
         public static function getDataDictionary($project_id, $format = 'array', $numeric = false, $fields = null, $forms = null)
         {
-            return [];
+            self::$getDataDictionaryCallCount++;
+            return self::$dataDictionary;
         }
     }
 

@@ -296,12 +296,23 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
             $valueSetType = $thisCategory['valueset-type'];
             $valueSet = $thisCategory['valueset'];
             $language = $thisCategory['fhir-display-language'];
+            // Without this, every search sends the typed text to the FHIR server as a
+            // filter, so nothing appears unless it happens to textually match the
+            // server's display wording. For a small, fully-enumerated ValueSet this
+            // makes it hard to browse - with return-all set, the filter is omitted
+            // entirely (fetching the full/default expansion instead) and matches are
+            // ranked locally below. Intended for small ValueSets only: it fetches the
+            // entire expansion on every keystroke rather than a filtered subset.
+            $returnAll = !empty($thisCategory['return-all']);
 
             if ('url' === $valueSetType) {
 
                 //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
                 // need to escape the $expand in the url!
-                $expandParams = ['url' => $valueSet, 'filter' => $search_term, 'count' => $fetchLimit];
+                $expandParams = ['url' => $valueSet, 'count' => $fetchLimit];
+                if (!$returnAll) {
+                    $expandParams['filter'] = $search_term;
+                }
                 if (!empty($language)){
                     $expandParams['displayLanguage'] = $language;
                 }
@@ -317,11 +328,21 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                 $postData = [
                     "resourceType" => "Parameters",
                     "parameter" => [
-                        ["name" => "filter", "valueString" => $search_term],
-                        ["name" => "_count", "valueInteger" => $fetchLimit],
+                        // 'count', not '_count' - $expand is a FHIR *operation*, not a
+                        // plain resource search, so its count parameter is 'count' as
+                        // defined by its OperationDefinition. '_count' is the REST
+                        // search-result modifier used by plain searches; Ontoserver
+                        // silently ignores it here rather than rejecting the request,
+                        // so it had no effect at all (confirmed live against the real
+                        // configured Ontoserver for redcap_fhir_ontology_provider's
+                        // identical POST-based $expand call).
+                        ["name" => "count", "valueInteger" => $fetchLimit],
                         ["name" => "valueSet", "resource" =>  $resource],
                     ]
                 ];
+                if (!$returnAll) {
+                    array_unshift($postData['parameter'], ["name" => "filter", "valueString" => $search_term]);
+                }
                 if (!empty($language)){
                     $postData['parameter'][] = ["name" => 'displayLanguage', "valueCode" => $language];
                 }
@@ -346,6 +367,14 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                 // Loop through results
                 $core_results = array();
                 $key_results = array();
+                // Only meaningful for return-all: with a real filter sent to the
+                // server, every returned entry already matches the search term, so
+                // this key is uniform and doesn't affect sort order. With return-all,
+                // the full unfiltered expansion comes back - entries matching the
+                // typed text (code or display, case-insensitively) rank ahead of
+                // non-matches, same priority-first/match-second order as
+                // redcap_fhir_ontology_provider's @FHIR-ONTOLOGY-OPTIONS return-all.
+                $matchKey_results = array();
                 $hideChoice = $this->getHideChoice();
                 foreach ($expansion['contains'] as $this_item) {
                     // code, display and system are not guaranteed present by FHIR
@@ -369,10 +398,17 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                         $sortKey = count($priorityCodes);
                     }
                     $key_results[] = $sortKey;
+                    $isMatch = ($search_term === '')
+                        || (stripos($code, $search_term) !== false)
+                        || (stripos($display, $search_term) !== false);
+                    $matchKey_results[] = $isMatch ? 0 : 1;
                     $core_results[] = [$code, $system, $display];
                 }
-                // sort to put priority codes first
-                array_multisort($key_results, SORT_ASC, $core_results);
+                // sort to put priority codes first, then (return-all only) matches
+                // ahead of non-matches; array_multisort is stable (guaranteed since
+                // PHP 8.0, this module's own floor), so ties keep their original
+                // (server-returned) relative order.
+                array_multisort($key_results, SORT_ASC, $matchKey_results, SORT_ASC, $core_results);
                 foreach ($core_results as $index=>$r) {
                     if ($index >= $result_limit){
                         // not interested in more results
@@ -400,22 +436,55 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
         return array_slice($results, 0, $result_limit, true);
     }
 
+    /**
+     * Returns the field currently being searched's raw field_annotation
+     * string, or null if there isn't one (or no field is being searched at
+     * all). $Proj->metadata[$field] stores this under the raw DB column name
+     * 'misc' - unlike REDCap::getDataDictionary()'s returned array, which
+     * normalises it to 'field_annotation' (see Classes/MetaData.php's
+     * getDataDictionaryHeaders()). An earlier version of this fast path both
+     * read 'field_annotation' from $Proj->metadata (the wrong key) and never
+     * pulled $Proj in via `global $Proj;` at all, so $Proj was always null
+     * here and the fast path could never run in the first place - every
+     * request fell through to the slower getDataDictionary() branch, or
+     * silently found nothing at all if $_GET['pid'] wasn't set either.
+     */
+    private function getFieldAnnotation()
+    {
+        global $Proj;
+        if (!isset($_GET['field'])) {
+            return null;
+        }
+        $field = $_GET['field'];
+        $project_id = isset($_GET['pid']) ? $_GET['pid'] : null;
+        if (($project_id === null || (isset($Proj->project_id) && (string)$Proj->project_id === (string)$project_id))
+                && isset($Proj->metadata[$field])) {
+            return isset($Proj->metadata[$field]['misc']) ? $Proj->metadata[$field]['misc'] : null;
+        }
+        if ($project_id !== null) {
+            $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
+            return isset($dd_array[$field]['field_annotation']) ? $dd_array[$field]['field_annotation'] : null;
+        }
+        return null;
+    }
+
     function getHideChoice()
     {
         $codesToHide=[];
-        if (isset($_GET['field'])){
-            $field = $_GET['field'];
-            if (isset($Proj->metadata[$_GET['field']])) {
-                $annotations = $Proj->metadata[$field]['field_annotation'];
-            }
-            else if (isset($_GET['pid'])){
-                $project_id = $_GET['pid'];
-                $dd_array = \REDCap::getDataDictionary($project_id, 'array', false, array($field));
-                $annotations = $dd_array[$field]['field_annotation'];
-            }
-            if ($annotations) {
+        $annotations = $this->getFieldAnnotation();
+        if ($annotations) {
+            // @HIDECHOICE is also REDCap core's own built-in action tag (for a
+            // different purpose, on real choice fields); reusing its name here
+            // means this module's own use of it can never be registered in
+            // REDCap's "@ Action Tags" popup (a module tag colliding with a
+            // built-in one is silently dropped from that list, not shown -
+            // see Design/action_tag_explain.php). @ADVANCED-FHIR-ONTOLOGY-HIDECHOICE
+            // is a second, non-colliding tag name recognized for the same
+            // purpose; both are supported and merged so existing fields using
+            // @HIDECHOICE keep working unchanged.
+            foreach (['@HIDECHOICE', '@ADVANCED-FHIR-ONTOLOGY-HIDECHOICE'] as $tagName) {
                 $offset = 0;
-                while (preg_match("/@HIDECHOICE='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
+                while (preg_match("/" . preg_quote($tagName, '/') . "='([^']*)'/", $annotations, $matches, PREG_OFFSET_CAPTURE, $offset) === 1){
                     $listedCodesStr = $matches[1][0];
                     $listedCodes = explode(',', $listedCodesStr);
                     foreach($listedCodes as $code){
