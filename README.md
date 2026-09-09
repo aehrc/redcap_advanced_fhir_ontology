@@ -316,6 +316,47 @@ field.
 @HIDECHOICE='code1,code2'
 ```
 
+**Fixed: `@HIDECHOICE` was silently ignored on every real autocomplete search.** The in-memory fast path never
+pulled REDCap's `$Proj` in via `global $Proj;` at all, so it could never actually run - every request either fell
+through to a full `getDataDictionary()` reload, or silently found nothing if the request didn't carry a project id
+either. Even if it had run, it read the field's annotation from `$Proj->metadata[$field]['field_annotation']`, but
+REDCap's real in-memory project metadata stores it under the raw DB column name `misc` - `field_annotation` is a
+key name that only exists in `REDCap::getDataDictionary()`'s own returned array. `@HIDECHOICE` had been broken
+since it was introduced in 0.2; it only ever appeared to work in this module's own test suite, whose fakes made
+the same `field_annotation` mistake.
+
+**Added: `@ADVANCED-FHIR-ONTOLOGY-HIDECHOICE`, a second tag name for the same purpose.** `@HIDECHOICE` is also
+REDCap's own built-in action tag (for a different purpose, on real choice fields), and a module-provided action
+tag whose name collides with a built-in one is silently dropped from REDCap's own "@ Action Tags" popup rather
+than shown - so this module's repurposing of `@HIDECHOICE` could never be documented there.
+`@ADVANCED-FHIR-ONTOLOGY-HIDECHOICE` is a new, non-colliding tag name recognized for exactly the same purpose,
+registered in that popup; both names are supported and can be freely mixed on the same field:
+```text
+@ADVANCED-FHIR-ONTOLOGY-HIDECHOICE='code1,code2'
+```
+
+### Return all values regardless of search text
+Every autocomplete search sends the typed text to the FHIR server as a `filter`, so nothing appears unless the
+typed text happens to textually match the server's `display` wording for an entry. For a small, fully-enumerated
+ValueSet (a handful of values, e.g. a frequency-of-use scale), this makes it hard to actually browse the options.
+Checking **Return all values regardless of search text** for a category removes that requirement: the field's
+search instead fetches the ValueSet's full/default expansion (the `filter` parameter is omitted entirely) and
+ranks entries locally - anything whose code or display matches the typed text sorts first (after priority codes,
+which still take precedence), everything else follows. **This option is intended for small ValueSets only.** It
+fetches the entire expansion on every search keystroke rather than a filtered subset, so setting it on a large
+ValueSet (SNOMED CT, etc.) would be slow and wasteful. Checking it also means `Return 'No Results Found'` above
+will never actually trigger, as long as at least one non-banned, non-hidden value is configured for the category
+(unlike a plain filtered search, this always has something to show).
+
+### Fixed: JSON/resource ValueSet searches could return far more results than requested
+For a category with `ValueSet Type` set to `ValueSet Resource (JSON)`, the `ValueSet/$expand` request sent
+`_count` to limit how many entries the FHIR server returns. `$expand` is a FHIR *operation*, not a plain resource
+search, so its count parameter is `count` as defined by its own OperationDefinition; `_count` is the REST
+search-result modifier used by plain searches, and the configured FHIR server silently ignored it here rather
+than rejecting the request - confirmed live against a real, broad SNOMED CT category configured this way, which
+previously returned far more entries than requested. Fixed to send `count`; the URL-based `ValueSet Type` already
+used the correct parameter name.
+
 ### FHIR Display Language Support
 As part of the 0.3 release an extra configuration option `Display Language` has been added. If this is provided it will
 be passed as a parameter to calls to the ValueSet/$expand operation. This parameter specifies the language to be used 
