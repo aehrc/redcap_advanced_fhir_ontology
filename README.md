@@ -377,10 +377,10 @@ than rejecting the request - confirmed live against a real, broad SNOMED CT cate
 previously returned far more entries than requested. Fixed to send `count`; the URL-based `ValueSet Type` already
 used the correct parameter name.
 
-### Added: circuit breaker and outbound-request origin scoping
+### Added: circuit breaker, outbound-request origin scoping, and a true end-to-end request timeout
 This module's own 0.4 release ("carried over from the same audit applied to the Fhir Ontology Autocomplete Module")
-picked up that sibling module's request-timeout, OAuth2, and credential-masking fixes, but not two further
-hardening changes that module received in a later security audit - this closes that gap.
+picked up that sibling module's request-timeout, OAuth2, and credential-masking fixes, but not further hardening
+changes that module received in a later security audit - this closes that gap.
 
 - ***Circuit breaker for terminology server failures*** - After 3 consecutive *slow* failures for a given category
   (calls that consume most of the timeout before failing), that category's own requests stop hitting its FHIR
@@ -396,8 +396,14 @@ hardening changes that module received in a later security audit - this closes t
   request, the category's own token endpoint): it must address the same origin and sit at or below its path. A
   request that would fall outside that (for example, one built from a malformed or hostile setting) is refused
   rather than sent. See `FhirRequestPolicy::isWithinBase()` for exactly what this does and does not cover - it is
-  not a general SSRF guard (no DNS resolution, and it doesn't see redirects `http_get()`/`http_post()` may follow
-  after this check passes).
+  not a general SSRF guard (no DNS resolution, and it doesn't see redirects this module's own curl calls may still
+  follow after this check passes, since `CURLOPT_FOLLOWLOCATION` is on).
+- ***`FHIR request timeout (seconds)` now bounds the entire request, not just connecting*** - Confirmed by reading
+  REDCap core's `Config/init_functions.php`: `http_get()`/`http_post()` only ever set curl's connect timeout, never
+  its total-time timeout, so a server that accepted the connection and then stalled could still hold a web server
+  process open indefinitely. This module now makes its own curl calls instead of delegating to those core helpers,
+  deliberately kept close to their existing option sets, with `CURLOPT_TIMEOUT` added on top. The `file_get_contents`
+  fallback used when curl is unavailable already had a true end-to-end limit and is unaffected.
 
 ### FHIR Display Language Support
 As part of the 0.3 release an extra configuration option `Display Language` has been added. If this is provided it will
