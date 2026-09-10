@@ -1,5 +1,13 @@
 # Advanced FHIR Ontology External Module
 
+This module lets a REDCap project use one or more external FHIR terminology servers as the source of values for a
+text field's autocomplete. Each field's ontology is a fully-configured "category" defined by a site administrator in
+the module's system settings - its own FHIR server, ValueSet (or custom ValueSet resource), authentication,
+priority/banned codes, and code/display templates - rather than something a project designer searches for and picks
+themselves. It is a more configurable sibling of the
+[Fhir Ontology Autocomplete Module](https://github.com/aehrc/redcap_fhir_ontology_provider), aimed at sites that want
+full administrative control over exactly how each ontology behaves.
+
 The sections below give the full story behind each version's changes - why, not just what. For a terser,
 automatically generated commit-by-commit record, see [CHANGELOG.md](./CHANGELOG.md).
 
@@ -24,19 +32,18 @@ It allows:
    match the server's wording.
 
 The original FHIR ontology external module provides code for searching for FHIR valuesets, mapping a single ontology
-to the valueset url. This allows for easier finding and setting of a valueset to use, but most other settings are defined
-in the modules system settings. All ontologies use the same fhir server, they all have the same no result settings and
-all have a code which is a concatenation of the FHIR code, display and system. This is because some FHIR valusets contain
-codes from more then one code system, and a code + system is required to uniquely identify the codes.
+to the valueset url. This allows for easier finding and setting of a valueset to use, but most other settings are
+still defined at the module (or site) level rather than per field: every ontology there shares the same FHIR server
+and the same no-result settings, and there is no way to ban a code outright. Its `@FHIR-ONTOLOGY-OPTIONS` action tag
+does let an individual field opt into `return-all` browsing, priority codes, and a `code-template` override of the
+stored value's format - narrowing some of the gap with this module's per-category settings - but a field still can't
+point at a different FHIR server, use a custom ValueSet resource, or ban a code entirely; those remain exclusive to
+this module.
 
 In this plugin, all settings are controlled by the site administrator, each ontology that is available must be fully
 defined in the system settings, with no 'helper' mechanisms to search for a valueset (hence the advanced label).
 
 ### Security, performance, and reliability fixes
-
-These changes carry over the same audit applied to the
-[Fhir Ontology Autocomplete Module](https://github.com/aehrc/redcap_fhir_ontology_provider). There are no new features
-in this group.
 
 - ***Requests to the FHIR server now time out*** - A new site-wide `FHIR request timeout (seconds)` setting (default 10)
   bounds how long REDCap waits for any configured FHIR server or OAuth2 token endpoint. Previously there was no limit, so
