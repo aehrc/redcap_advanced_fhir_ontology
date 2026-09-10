@@ -49,22 +49,22 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
 
     public function testFhirTimeoutDefaultsWhenSettingBlank(): void
     {
-        $this->assertSame(AdvancedFhirOntologyExternalModule::DEFAULT_TIMEOUT, $this->module->getFhirTimeout());
+        $this->assertSame(FhirRequestPolicy::DEFAULT_TIMEOUT, $this->module->getFhirTimeout());
     }
 
     public function testFhirTimeoutDefaultsWhenSettingNotNumeric(): void
     {
         $this->module->systemSettings['fhir-timeout'] = 'not-a-number';
-        $this->assertSame(AdvancedFhirOntologyExternalModule::DEFAULT_TIMEOUT, $this->module->getFhirTimeout());
+        $this->assertSame(FhirRequestPolicy::DEFAULT_TIMEOUT, $this->module->getFhirTimeout());
     }
 
     public function testFhirTimeoutDefaultsWhenSettingZeroOrNegative(): void
     {
         $this->module->systemSettings['fhir-timeout'] = '0';
-        $this->assertSame(AdvancedFhirOntologyExternalModule::DEFAULT_TIMEOUT, $this->module->getFhirTimeout());
+        $this->assertSame(FhirRequestPolicy::DEFAULT_TIMEOUT, $this->module->getFhirTimeout());
 
         $this->module->systemSettings['fhir-timeout'] = '-5';
-        $this->assertSame(AdvancedFhirOntologyExternalModule::DEFAULT_TIMEOUT, $this->module->getFhirTimeout());
+        $this->assertSame(FhirRequestPolicy::DEFAULT_TIMEOUT, $this->module->getFhirTimeout());
     }
 
     public function testFhirTimeoutUsesConfiguredValue(): void
@@ -366,6 +366,162 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
 
         $this->assertCount(1, FakeHttpTransport::$calls);
         $this->assertSame(7, FakeHttpTransport::$calls[0]['timeout']);
+    }
+
+    // --- true end-to-end request timeout ---
+    // REDCap core's http_get()/http_post() only ever set curl's *connect*
+    // timeout (confirmed by reading Config/init_functions.php) - a server that
+    // accepts the connection and then stalls could still hold a web server
+    // process open indefinitely. This module now makes its own curl calls
+    // instead of delegating to core's, specifically to also set CURLOPT_TIMEOUT.
+
+    public function testHttpGetSetsBothConnectAndTotalTimeout(): void
+    {
+        $this->module->systemSettings['fhir-timeout'] = '7';
+        FakeHttpTransport::$response = 'ok';
+
+        $this->module->httpGet('https://example.test/fhir/metadata', ['User-Agent: Redcap'], 'https://example.test/fhir');
+
+        $this->assertCount(1, FakeHttpTransport::$calls);
+        $this->assertSame(7, FakeHttpTransport::$calls[0]['timeout'], 'connect timeout');
+        $this->assertSame(7, FakeHttpTransport::$calls[0]['total_timeout'], 'the new end-to-end timeout');
+    }
+
+    public function testHttpPostSetsBothConnectAndTotalTimeout(): void
+    {
+        $this->module->systemSettings['fhir-timeout'] = '7';
+        FakeHttpTransport::$response = 'ok';
+
+        $this->module->httpPost(
+            'https://example.test/fhir/ValueSet/$expand',
+            '{}',
+            'application/json',
+            ['User-Agent: Redcap'],
+            'https://example.test/fhir'
+        );
+
+        $this->assertCount(1, FakeHttpTransport::$calls);
+        $this->assertSame(7, FakeHttpTransport::$calls[0]['timeout'], 'connect timeout');
+        $this->assertSame(7, FakeHttpTransport::$calls[0]['total_timeout'], 'the new end-to-end timeout');
+    }
+
+    public function testHttpPostSendsContentTypeHeaderAlongsideCustomHeaders(): void
+    {
+        // Regression: REDCap core's own http_post() sets CURLOPT_HTTPHEADER for
+        // the content-type header, then - if custom headers are also present -
+        // overwrites it entirely with just those (curl_setopt() replaces, not
+        // merges), silently dropping the content-type header. This module's
+        // curlPostWithTotalTimeout() builds the header list once instead.
+        FakeHttpTransport::$response = 'ok';
+
+        $this->module->httpPost(
+            'https://example.test/fhir/ValueSet/$expand',
+            '{"resourceType":"Parameters"}',
+            'application/json',
+            ['User-Agent: Redcap'],
+            'https://example.test/fhir'
+        );
+
+        $sentHeaders = FakeHttpTransport::$calls[0]['headers'];
+        $this->assertContains('Content-Type: application/json', $sentHeaders);
+        $this->assertContains('User-Agent: Redcap', $sentHeaders);
+    }
+
+    // --- circuit breaker / origin-scoping ---
+    // Ported from redcap_fhir_ontology_provider, which received this hardening in
+    // an earlier security audit that this sibling module never got - ported here
+    // per-category (isCircuitOpen($category) etc.) rather than site-wide, since
+    // this module lets each category point at a completely different FHIR
+    // server: one category's dead server must not fail-fast every other
+    // category's healthy one. FhirRequestPolicyTest covers the underlying pure
+    // logic exhaustively; these confirm it's actually wired into this module.
+
+    public function testCircuitClosedByDefault(): void
+    {
+        $this->assertFalse($this->module->isCircuitOpen('test-cat'));
+    }
+
+    public function testCircuitOpensAfterThreeFailuresForThatCategoryOnly(): void
+    {
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->recordFhirFailure('test-cat');
+        $this->assertFalse($this->module->isCircuitOpen('test-cat'), 'two failures must not open the breaker');
+        $this->module->recordFhirFailure('test-cat');
+        $this->assertTrue($this->module->isCircuitOpen('test-cat'), 'three failures must open the breaker');
+
+        // A different category's own breaker must be unaffected - one dead FHIR
+        // server must not fail-fast every other category's healthy one.
+        $this->assertFalse($this->module->isCircuitOpen('other-cat'));
+    }
+
+    public function testRecordFhirFailureIfSlowIgnoresFastFailures(): void
+    {
+        $this->module->systemSettings['fhir-timeout'] = '10';
+        // 0.2s against a 10s timeout is nowhere near the 80% slow-call threshold.
+        $this->module->recordFhirFailureIfSlow('test-cat', 0.2);
+        $this->module->recordFhirFailureIfSlow('test-cat', 0.2);
+        $this->module->recordFhirFailureIfSlow('test-cat', 0.2);
+        $this->assertFalse($this->module->isCircuitOpen('test-cat'), 'fast (e.g. 4xx) failures must never trip the breaker');
+    }
+
+    public function testRecordFhirFailureIfSlowCountsSlowFailures(): void
+    {
+        $this->module->systemSettings['fhir-timeout'] = '10';
+        $this->module->recordFhirFailureIfSlow('test-cat', 9.0);
+        $this->module->recordFhirFailureIfSlow('test-cat', 9.0);
+        $this->module->recordFhirFailureIfSlow('test-cat', 9.0);
+        $this->assertTrue($this->module->isCircuitOpen('test-cat'));
+    }
+
+    public function testRecordFhirSuccessClearsFailureCount(): void
+    {
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->recordFhirSuccess('test-cat');
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->recordFhirFailure('test-cat');
+        $this->assertFalse($this->module->isCircuitOpen('test-cat'), 'a success must reset the count, not just add to it');
+    }
+
+    public function testSearchOntologyFailsFastWithoutCallingHttpWhenBreakerOpen(): void
+    {
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->subSettings['site-category-list'] = [$this->category()];
+
+        $results = $this->module->searchOntology('test-cat', 'term', 20);
+
+        $this->assertSame([], $results);
+        $this->assertCount(0, FakeHttpTransport::$calls, 'an open breaker must fail fast without dialing out');
+    }
+
+    public function testSearchOntologyDoesNotReturnNoResultFallbackWhenBreakerOpen(): void
+    {
+        // An open breaker is a fetch failure, not a genuine "no matches" result -
+        // it must not be presented as one.
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->recordFhirFailure('test-cat');
+        $this->module->subSettings['site-category-list'] = [$this->category([
+            'return-no-result' => true,
+            'no-result-label' => 'No Results Found',
+            'no-result-code' => '_NRF_',
+        ])];
+
+        $results = $this->module->searchOntology('test-cat', 'term', 20);
+
+        $this->assertSame([], $results);
+    }
+
+    public function testHttpGetRefusesUrlOutsideConfiguredBase(): void
+    {
+        FakeHttpTransport::$response = 'should never be reached';
+
+        $result = $this->module->httpGet('https://evil.example.test/steal', ['User-Agent: Redcap'], 'https://example.test/fhir');
+
+        $this->assertFalse($result);
+        $this->assertCount(0, FakeHttpTransport::$calls, 'a disallowed URL must never reach the transport');
     }
 
     // --- getHideChoice() / getFieldAnnotation() ---
