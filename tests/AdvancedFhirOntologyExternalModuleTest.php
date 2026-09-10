@@ -90,10 +90,34 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->assertCount(1, FakeHttpTransport::$calls, 'should fetch a token on first call');
 
         // Regression: expires_in (seconds) was previously multiplied by 1000,
-        // caching a 3600s token for ~41 days instead of ~1 hour.
-        $expireKey = 'ADVFHIR_https://example.test/token_TOKEN_EXPIRES';
+        // caching a 3600s token for ~41 days instead of ~1 hour. The cache key is
+        // a hash of endpoint+clientId (see testDifferentClientIdsOnTheSameTokenEndpointDoNotShareACachedToken),
+        // so it's found by scanning $_SESSION for the one *_TOKEN_EXPIRES key
+        // this test itself just created, rather than asserting its literal name.
+        $expireKeys = array_filter(array_keys($_SESSION), fn($k) => str_starts_with($k, 'ADVFHIR_') && str_ends_with($k, '_TOKEN_EXPIRES'));
+        $this->assertCount(1, $expireKeys);
+        $expireKey = reset($expireKeys);
         $this->assertGreaterThanOrEqual($before + 3600 - 60, $_SESSION[$expireKey]);
         $this->assertLessThanOrEqual($after + 3600, $_SESSION[$expireKey]);
+    }
+
+    public function testDifferentClientIdsOnTheSameTokenEndpointDoNotShareACachedToken(): void
+    {
+        // Regression: the cache key used to be keyed by token endpoint alone, so
+        // a second category authenticating against the same endpoint with a
+        // different client ID would silently be handed the first category's
+        // cached token - a real cross-category identity/authorization mix-up,
+        // not just a cache-efficiency bug.
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-for-client-a', 'expires_in' => 3600]);
+        $tokenA = $this->module->getClientCredentialsToken('cat-a', 'https://example.test/token', 'client-a', 'secret-a');
+        $this->assertCount(1, FakeHttpTransport::$calls);
+
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-for-client-b', 'expires_in' => 3600]);
+        $tokenB = $this->module->getClientCredentialsToken('cat-b', 'https://example.test/token', 'client-b', 'secret-b');
+
+        $this->assertSame('tok-for-client-a', $tokenA);
+        $this->assertSame('tok-for-client-b', $tokenB);
+        $this->assertCount(2, FakeHttpTransport::$calls, 'a different client ID must trigger its own fetch, not reuse the other client\'s cached token');
     }
 
     public function testCachedUnexpiredTokenIsReusedWithoutRefetching(): void

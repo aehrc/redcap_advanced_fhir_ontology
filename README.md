@@ -404,6 +404,23 @@ changes that module received in a later security audit - this closes that gap.
   process open indefinitely. This module now makes its own curl calls instead of delegating to those core helpers,
   deliberately kept close to their existing option sets, with `CURLOPT_TIMEOUT` added on top. The `file_get_contents`
   fallback used when curl is unavailable already had a true end-to-end limit and is unaffected.
+- ***Known limitation, not addressed here: TLS certificate verification is disabled on every outbound HTTPS
+  request*** (`CURLOPT_SSL_VERIFYPEER` is off in `curlGetWithTotalTimeout()`/`curlPostWithTotalTimeout()`). This is
+  inherited unchanged from REDCap core's own `http_get()`/`http_post()`, which this module's curl calls
+  deliberately mirror - confirmed identical in `Config/init_functions.php`. A network-position attacker able to
+  intercept the connection to a configured FHIR server or OAuth2 token endpoint can present any certificate and
+  read or alter the request/response, including the OAuth2 client secret and bearer token. Left as-is rather than
+  fixed unilaterally in this module alone: enabling verification here would diverge from core's own default and
+  could break legitimate deployments using an internal CA or self-signed certificate for an internal-network FHIR
+  server, without a corresponding opt-out setting to fall back on.
+
+### Fixed: OAuth2 token cache could be shared across categories with different credentials
+`getClientCredentialsToken()` caches the fetched access token in `$_SESSION`, keyed by the token endpoint. Since
+each category can configure its own `cc-client-id`/`cc-client-secret`, two categories sharing the same token
+endpoint but different credentials would have the second one silently reuse the first one's cached token instead
+of authenticating as itself - a real cross-category authorization mix-up if the two clients have different scopes
+or permissions, not just a caching inefficiency. The cache key is now derived from the token endpoint *and* the
+client ID together.
 
 ### FHIR Display Language Support
 As part of the 0.3 release an extra configuration option `Display Language` has been added. If this is provided it will

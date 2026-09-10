@@ -929,8 +929,17 @@ EOD;
     public function getClientCredentialsToken($category, $tokenEndpoint, $clientId, $clientSecret)
     {
         $now = time();
-        $expireKey = 'ADVFHIR_' . $tokenEndpoint . '_TOKEN_EXPIRES';
-        $tokenKey = 'ADVFHIR_' . $tokenEndpoint . '_TOKEN';
+        // Keyed by both the endpoint and the client ID (not just the endpoint) -
+        // two categories can share a token endpoint while authenticating as
+        // different clients (different scopes/permissions on the auth server),
+        // and without the client ID in the key, the second category to run in a
+        // session would silently reuse the first category's cached token instead
+        // of authenticating as itself. Hashed rather than concatenated as plain
+        // text so an unusual client ID (e.g. containing spaces or unicode) can't
+        // produce a key that collides with a differently-built one.
+        $cacheKeySuffix = hash('sha256', $tokenEndpoint . "\0" . $clientId);
+        $expireKey = 'ADVFHIR_' . $cacheKeySuffix . '_TOKEN_EXPIRES';
+        $tokenKey = 'ADVFHIR_' . $cacheKeySuffix . '_TOKEN';
         if (array_key_exists($expireKey, $_SESSION) &&
             array_key_exists($tokenKey, $_SESSION)) {
             $expire = $_SESSION[$expireKey];
