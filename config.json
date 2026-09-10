@@ -77,6 +77,18 @@
           "type": "text"
         },
         {
+          "key": "return-all",
+          "tt_name": "return_all",
+          "name": "Return all values regardless of search text (browse a short list without needing to guess its exact wording)",
+          "type": "checkbox"
+        },
+        {
+          "key": "return-all-info",
+          "tt_name": "return_all_info",
+          "name": "Intended only for a small, fully-enumerated ValueSet - it fetches the full expansion on every search keystroke rather than a filtered subset, so setting it on a large ValueSet would be slow and wasteful. When checked, Return 'No Results Found' below will never actually trigger, as long as at least one non-banned, non-hidden value is configured (unlike a plain filtered search, this always has something to show).",
+          "type": "descriptive"
+        },
+        {
           "key": "no_result_info",
           "tt_name": "no_result_info",
           "name": "Settings for returning a custom code if no result is found. If the return no result found checkbox is not selected, the other options can be ignored",
@@ -233,6 +245,12 @@
           "type": "textarea"
         }
       ]
+    }
+  ],
+  "action-tags": [
+    {
+      "tag": "@ADVANCED-FHIR-ONTOLOGY-HIDECHOICE",
+      "description": "<b>@ADVANCED-FHIR-ONTOLOGY-HIDECHOICE='code1,code2'</b><br>For a field using this module's FHIR ontology support, hides the listed codes so they never appear as selectable options in the field's autocomplete search. Codes are a comma-separated list, matched against the FHIR code only - not the code system, so a code shared by two systems in the same ValueSet cannot be hidden selectively.<br>This module also recognizes the older <code>@HIDECHOICE</code> tag name for the same purpose (for backward compatibility with existing fields); it isn't listed separately here because it collides with REDCap's own built-in @HIDECHOICE tag for standard choice fields, which this popup always shows instead."
     }
   ],
   "compatibility": {
