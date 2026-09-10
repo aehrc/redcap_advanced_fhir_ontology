@@ -929,15 +929,24 @@ EOD;
     public function getClientCredentialsToken($category, $tokenEndpoint, $clientId, $clientSecret)
     {
         $now = time();
-        // Keyed by both the endpoint and the client ID (not just the endpoint) -
-        // two categories can share a token endpoint while authenticating as
-        // different clients (different scopes/permissions on the auth server),
-        // and without the client ID in the key, the second category to run in a
-        // session would silently reuse the first category's cached token instead
-        // of authenticating as itself. Hashed rather than concatenated as plain
-        // text so an unusual client ID (e.g. containing spaces or unicode) can't
-        // produce a key that collides with a differently-built one.
-        $cacheKeySuffix = hash('sha256', $tokenEndpoint . "\0" . $clientId);
+        // Keyed by the endpoint, client ID, AND client secret (not just the
+        // endpoint) - two categories can share a token endpoint while
+        // authenticating as different clients (different scopes/permissions on
+        // the auth server), and without the client ID in the key, the second
+        // category to run in a session would silently reuse the first
+        // category's cached token instead of authenticating as itself. The
+        // secret is included too: two categories configured with the same
+        // client ID but a different (e.g. mistyped, or rotated in one place
+        // but not the other) secret must not share a token either - the second
+        // category's own secret would then never actually be exercised, and a
+        // configuration mistake would silently succeed off the back of the
+        // first category's valid credentials instead of surfacing as an auth
+        // failure. Hashed rather than concatenated as plain text so an unusual
+        // client ID/secret (e.g. containing spaces, unicode, or an embedded
+        // NUL byte) can't produce a key that collides with a differently-built
+        // one - the null-byte separators below only disambiguate ordinary
+        // component boundaries, not this edge case.
+        $cacheKeySuffix = hash('sha256', $tokenEndpoint . "\0" . $clientId . "\0" . $clientSecret);
         $expireKey = 'ADVFHIR_' . $cacheKeySuffix . '_TOKEN_EXPIRES';
         $tokenKey = 'ADVFHIR_' . $cacheKeySuffix . '_TOKEN';
         if (array_key_exists($expireKey, $_SESSION) &&

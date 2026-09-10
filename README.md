@@ -419,8 +419,10 @@ changes that module received in a later security audit - this closes that gap.
 each category can configure its own `cc-client-id`/`cc-client-secret`, two categories sharing the same token
 endpoint but different credentials would have the second one silently reuse the first one's cached token instead
 of authenticating as itself - a real cross-category authorization mix-up if the two clients have different scopes
-or permissions, not just a caching inefficiency. The cache key is now derived from the token endpoint *and* the
-client ID together.
+or permissions, not just a caching inefficiency. This also covered two categories sharing the same client ID but a
+different (e.g. mistyped, or rotated in one place but not the other) secret: the second category's own secret
+would never actually be exercised, letting its misconfiguration succeed silently instead of surfacing as an auth
+failure. The cache key is now derived from the token endpoint, client ID, *and* client secret together.
 
 ### FHIR Display Language Support
 As part of the 0.3 release an extra configuration option `Display Language` has been added. If this is provided it will

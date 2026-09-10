@@ -120,6 +120,27 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->assertCount(2, FakeHttpTransport::$calls, 'a different client ID must trigger its own fetch, not reuse the other client\'s cached token');
     }
 
+    public function testSameClientIdWithDifferentSecretsOnTheSameTokenEndpointDoNotShareACachedToken(): void
+    {
+        // Regression: the client ID alone isn't enough either - two categories
+        // configured with the same client ID but a different secret (e.g. a
+        // mistyped or partially-rotated secret) must not share a token. If they
+        // did, the second category's own secret would never actually be
+        // exercised, and its misconfiguration would silently succeed off the
+        // back of the first category's valid credentials instead of surfacing
+        // as an auth failure.
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-for-secret-a', 'expires_in' => 3600]);
+        $tokenA = $this->module->getClientCredentialsToken('cat-a', 'https://example.test/token', 'shared-client', 'secret-a');
+        $this->assertCount(1, FakeHttpTransport::$calls);
+
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-for-secret-b', 'expires_in' => 3600]);
+        $tokenB = $this->module->getClientCredentialsToken('cat-b', 'https://example.test/token', 'shared-client', 'secret-b');
+
+        $this->assertSame('tok-for-secret-a', $tokenA);
+        $this->assertSame('tok-for-secret-b', $tokenB);
+        $this->assertCount(2, FakeHttpTransport::$calls, 'a different secret must trigger its own fetch, not reuse the other category\'s cached token');
+    }
+
     public function testCachedUnexpiredTokenIsReusedWithoutRefetching(): void
     {
         FakeHttpTransport::$response = json_encode(['access_token' => 'tok-1', 'expires_in' => 3600]);
