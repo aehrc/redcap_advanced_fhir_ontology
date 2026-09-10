@@ -28,12 +28,11 @@ namespace AEHRC\AdvancedFhirOntologyExternalModule;
 use ExternalModules\AbstractExternalModule;
 use ExternalModules\ExternalModules;
 
+require_once __DIR__ . '/FhirRequestPolicy.php';
+
 
 class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implements \OntologyProvider
 {
-    /** Fallback timeout (seconds) used when the 'fhir-timeout' setting is blank or invalid. */
-    const DEFAULT_TIMEOUT = 10;
-
     public function __construct()
     {
         parent::__construct();
@@ -163,7 +162,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     $authPassword = $basicUserPasswords[$key];
                     $headers[] = 'Authorization: Basic ' . base64_encode($authUser . ':' . $authPassword);
                 }
-                $metadata = $this->httpGet($fhirUrl . '/metadata', $headers);
+                $metadata = $this->httpGet($fhirUrl . '/metadata', $headers, $fhirUrl);
                 if ($metadata === FALSE) {
                     $errors .= "Ontology Id " . $ontologyIdValues[$key] . " - Failed to get metadata for fhir server at '" . $fhirUrl . "'\n";
                 }
@@ -180,7 +179,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     $headers = ['User-Agent: Redcap', 'Authorization: Basic ' . base64_encode($clientId . ':' . $clientSecret)];
 
                     try {
-                        $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
+                        $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers, $authEndpoint);
                         if ($response === false) {
                             $r = isset($http_response_header) ? implode("", $http_response_header) : '';
                             $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' response = false, r='" . $r . "'\n";
@@ -263,6 +262,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
             }
         }
         $results = array();
+        $fhirFailed = false;
         // Set 20 as default limit
         $result_limit = (is_numeric($result_limit) ? $result_limit : 20);
 
@@ -305,51 +305,69 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
             // entire expansion on every keystroke rather than a filtered subset.
             $returnAll = !empty($thisCategory['return-all']);
 
-            if ('url' === $valueSetType) {
-
-                //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
-                // need to escape the $expand in the url!
-                $expandParams = ['url' => $valueSet, 'count' => $fetchLimit];
-                if (!$returnAll) {
-                    $expandParams['filter'] = $search_term;
-                }
-                if (!empty($language)){
-                    $expandParams['displayLanguage'] = $language;
-                }
-                $url = $fhirServerUrl . "/ValueSet/\$expand?" . http_build_query($expandParams);
-
-                $json = $this->httpGet($url, $headers);
+            $fhirFailed = false;
+            $json = false;
+            if ($this->isCircuitOpen($category)) {
+                // This category's server has failed repeatedly - fail fast rather
+                // than tying up a web server process on a request we already
+                // expect to time out.
+                $fhirFailed = true;
             }
             else {
-                // valueset is json
-                $resource = json_decode($valueSet, true);
-                $contentType = "application/json";
+                $startedAt = microtime(true);
+                if ('url' === $valueSetType) {
 
-                $postData = [
-                    "resourceType" => "Parameters",
-                    "parameter" => [
-                        // 'count', not '_count' - $expand is a FHIR *operation*, not a
-                        // plain resource search, so its count parameter is 'count' as
-                        // defined by its OperationDefinition. '_count' is the REST
-                        // search-result modifier used by plain searches; Ontoserver
-                        // silently ignores it here rather than rejecting the request,
-                        // so it had no effect at all (confirmed live against the real
-                        // configured Ontoserver for redcap_fhir_ontology_provider's
-                        // identical POST-based $expand call).
-                        ["name" => "count", "valueInteger" => $fetchLimit],
-                        ["name" => "valueSet", "resource" =>  $resource],
-                    ]
-                ];
-                if (!$returnAll) {
-                    array_unshift($postData['parameter'], ["name" => "filter", "valueString" => $search_term]);
-                }
-                if (!empty($language)){
-                    $postData['parameter'][] = ["name" => 'displayLanguage', "valueCode" => $language];
-                }
-                $postData = json_encode($postData, JSON_UNESCAPED_SLASHES);
+                    //  Base URL + “/ValueSet/$expand?identifier=VS_ID&filter=SEARCH_TERM”
+                    // need to escape the $expand in the url!
+                    $expandParams = ['url' => $valueSet, 'count' => $fetchLimit];
+                    if (!$returnAll) {
+                        $expandParams['filter'] = $search_term;
+                    }
+                    if (!empty($language)){
+                        $expandParams['displayLanguage'] = $language;
+                    }
+                    $url = $fhirServerUrl . "/ValueSet/\$expand?" . http_build_query($expandParams);
 
-                $url = $fhirServerUrl . '/ValueSet/$expand';
-                $json = $this->httpPost($url, $postData, $contentType, $headers);
+                    $json = $this->httpGet($url, $headers, $fhirServerUrl);
+                }
+                else {
+                    // valueset is json
+                    $resource = json_decode($valueSet, true);
+                    $contentType = "application/json";
+
+                    $postData = [
+                        "resourceType" => "Parameters",
+                        "parameter" => [
+                            // 'count', not '_count' - $expand is a FHIR *operation*, not a
+                            // plain resource search, so its count parameter is 'count' as
+                            // defined by its OperationDefinition. '_count' is the REST
+                            // search-result modifier used by plain searches; Ontoserver
+                            // silently ignores it here rather than rejecting the request,
+                            // so it had no effect at all (confirmed live against the real
+                            // configured Ontoserver for redcap_fhir_ontology_provider's
+                            // identical POST-based $expand call).
+                            ["name" => "count", "valueInteger" => $fetchLimit],
+                            ["name" => "valueSet", "resource" =>  $resource],
+                        ]
+                    ];
+                    if (!$returnAll) {
+                        array_unshift($postData['parameter'], ["name" => "filter", "valueString" => $search_term]);
+                    }
+                    if (!empty($language)){
+                        $postData['parameter'][] = ["name" => 'displayLanguage', "valueCode" => $language];
+                    }
+                    $postData = json_encode($postData, JSON_UNESCAPED_SLASHES);
+
+                    $url = $fhirServerUrl . '/ValueSet/$expand';
+                    $json = $this->httpPost($url, $postData, $contentType, $headers, $fhirServerUrl);
+                }
+                if ($json === false) {
+                    $fhirFailed = true;
+                    $this->recordFhirFailureIfSlow($category, microtime(true) - $startedAt);
+                }
+                else {
+                    $this->recordFhirSuccess($category);
+                }
             }
 
             $codeTemplate = $thisCategory['code-template'];
@@ -436,9 +454,11 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
         }
 
 
-        if (!$results && $thisCategory !== null) {
+        if (!$results && $thisCategory !== null && !$fhirFailed) {
             // no results found - unknown category already returns empty above,
-            // nothing to fall back to
+            // nothing to fall back to. Also skipped when the FHIR call itself
+            // failed (breaker open, transport failure) - that's not a genuine
+            // "no matches" result, so it shouldn't be presented as one.
             $return_no_result = $thisCategory['return-no-result'];
             if ($return_no_result) {
                 $no_result_label = $thisCategory['no-result-label'];
@@ -567,15 +587,116 @@ EOD;
      */
     public function getFhirTimeout()
     {
-        $timeout = $this->getSystemSetting('fhir-timeout');
-        if (is_numeric($timeout) && (int)$timeout > 0) {
-            return (int)$timeout;
-        }
-        return self::DEFAULT_TIMEOUT;
+        return FhirRequestPolicy::resolveTimeout($this->getSystemSetting('fhir-timeout'));
     }
 
-    public function httpGet($fullUrl, $headers)
+    /**
+     * True while $category's circuit breaker is open, i.e. that category's own FHIR
+     * server has failed repeatedly and we should fail fast instead of dialing out
+     * again. Ported from redcap_fhir_ontology_provider, scoped per-category rather
+     * than site-wide - unlike that module, a single site-wide fhir-api-url, this
+     * module lets each category point at a completely different FHIR server, so one
+     * category's dead server must not fail-fast every other category's healthy one.
+     *
+     * Once the open window elapses a caller that observes it re-arms the window
+     * before returning false, so callers arriving behind it keep failing fast while
+     * it probes the server. This is best-effort, not a guarantee - see
+     * redcap_fhir_ontology_provider's identical isCircuitOpen() for the full
+     * read/write-race caveat, which applies unchanged here.
+     */
+    public function isCircuitOpen($category)
     {
+        $openUntil = $this->getSystemSetting('fhir_breaker_open_until_' . $category);
+        $now = time();
+        if (FhirRequestPolicy::isOpen($openUntil, $now)) {
+            return true;
+        }
+        if (FhirRequestPolicy::needsRearm($openUntil, $now)) {
+            $this->setSystemSetting('fhir_breaker_open_until_' . $category, $now + FhirRequestPolicy::BREAKER_OPEN_SECONDS);
+        }
+        return false;
+    }
+
+    /** Counts a failure for $category and opens its breaker once enough have accumulated. */
+    public function recordFhirFailure($category)
+    {
+        $failures = FhirRequestPolicy::nextFailureCount($this->getSystemSetting('fhir_breaker_failures_' . $category));
+        $this->setSystemSetting('fhir_breaker_failures_' . $category, $failures);
+        if (FhirRequestPolicy::opensBreaker($failures)) {
+            $this->setSystemSetting('fhir_breaker_open_until_' . $category, time() + FhirRequestPolicy::BREAKER_OPEN_SECONDS);
+        }
+    }
+
+    /**
+     * A failure only indicates server health if the call actually hung. A fast
+     * rejection (e.g. a malformed valueset returning 4xx) must not trip the breaker
+     * for every other project using this same category.
+     */
+    public function recordFhirFailureIfSlow($category, $elapsedSeconds)
+    {
+        if (FhirRequestPolicy::countsAsFailure($elapsedSeconds, $this->getFhirTimeout())) {
+            $this->recordFhirFailure($category);
+        }
+    }
+
+    public function recordFhirSuccess($category)
+    {
+        // only write when there is state to clear, so a healthy server costs no writes
+        if ($this->getSystemSetting('fhir_breaker_failures_' . $category)) {
+            $this->setSystemSetting('fhir_breaker_failures_' . $category, 0);
+            $this->setSystemSetting('fhir_breaker_open_until_' . $category, 0);
+        }
+    }
+
+    /**
+     * Returns $url with any embedded userinfo (user:pass@) stripped, for safe
+     * inclusion in log messages. Falls back to the original value if it cannot
+     * be parsed as a URL.
+     */
+    private function urlForLogging($url)
+    {
+        if (!is_string($url) || '' === $url) {
+            return (string)$url;
+        }
+        $parts = parse_url($url);
+        if (!is_array($parts) || (!isset($parts['user']) && !isset($parts['pass']))) {
+            return $url;
+        }
+        $result = '';
+        if (isset($parts['scheme'])) {
+            $result .= $parts['scheme'] . '://';
+        }
+        if (isset($parts['host'])) {
+            $result .= $parts['host'];
+        }
+        if (isset($parts['port'])) {
+            $result .= ':' . $parts['port'];
+        }
+        if (isset($parts['path'])) {
+            $result .= $parts['path'];
+        }
+        if (isset($parts['query'])) {
+            $result .= '?' . $parts['query'];
+        }
+        return $result;
+    }
+
+    /**
+     * @param string $base Every URL this module builds before calling httpGet() is
+     *   checked against this with FhirRequestPolicy::isWithinBase(), so a malformed
+     *   or hostile setting cannot make the module request a path or host outside
+     *   the caller's intended server. Callers validating a candidate URL that has
+     *   not been saved yet pass the same value as both $fullUrl and $base, which
+     *   validates well-formedness only (isWithinBase(x, x) is trivially true), not
+     *   containment.
+     */
+    public function httpGet($fullUrl, $headers, $base)
+    {
+        if (!FhirRequestPolicy::isWithinBase($fullUrl, $base)) {
+            error_log('AdvancedFhirOntologyExternalModule: httpGet refused URL outside configured base - url='
+                . $this->urlForLogging($fullUrl) . ' base=' . $this->urlForLogging($base));
+            return false;
+        }
         $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_get in init_functions doesn't include the headers.
         if (function_exists('curl_init') || empty($headers)) {
@@ -610,8 +731,14 @@ EOD;
         return $content;
     }
 
-    public function httpPost($fullUrl, $postData, $contentType, $headers)
+    /** @param string $base See httpGet()'s docblock - identical containment check. */
+    public function httpPost($fullUrl, $postData, $contentType, $headers, $base)
     {
+        if (!FhirRequestPolicy::isWithinBase($fullUrl, $base)) {
+            error_log('AdvancedFhirOntologyExternalModule: httpPost refused URL outside configured base - url='
+                . $this->urlForLogging($fullUrl) . ' base=' . $this->urlForLogging($base));
+            return false;
+        }
         $timeout = $this->getFhirTimeout();
         // if curl isn't install the default version of http_post in init_functions doesn't include the headers.
         // but the curl version will overwrite the content type header if other headers are included.
@@ -695,7 +822,7 @@ EOD;
 
         $clear = true;
         try {
-            $response = $this->httpPost($tokenEndpoint, $params, 'application/x-www-form-urlencoded', $headers);
+            $response = $this->httpPost($tokenEndpoint, $params, 'application/x-www-form-urlencoded', $headers, $tokenEndpoint);
             // a false or unparseable response decodes to null, and array_key_exists(null)
             // is a fatal TypeError on PHP 8
             $responseJson = is_string($response) ? json_decode($response, true) : null;

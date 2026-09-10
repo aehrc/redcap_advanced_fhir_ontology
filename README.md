@@ -377,6 +377,28 @@ than rejecting the request - confirmed live against a real, broad SNOMED CT cate
 previously returned far more entries than requested. Fixed to send `count`; the URL-based `ValueSet Type` already
 used the correct parameter name.
 
+### Added: circuit breaker and outbound-request origin scoping
+This module's own 0.4 release ("carried over from the same audit applied to the Fhir Ontology Autocomplete Module")
+picked up that sibling module's request-timeout, OAuth2, and credential-masking fixes, but not two further
+hardening changes that module received in a later security audit - this closes that gap.
+
+- ***Circuit breaker for terminology server failures*** - After 3 consecutive *slow* failures for a given category
+  (calls that consume most of the timeout before failing), that category's own requests stop hitting its FHIR
+  server for 60 seconds and return no results immediately, then let a trial request through to check for
+  recovery. A fast failure (e.g. a quick 4xx response) neither counts towards this nor resets the count. Scoped
+  per category, not site-wide: unlike `redcap_fhir_ontology_provider`'s single site-wide FHIR server, each category
+  here can point at a completely different server, so one category's dead server must not fail-fast every other
+  category's healthy one. As with that module's own breaker, this is a best-effort stampede guard (the read and
+  write are separate round trips with no lock between them), not a precise counter or a guard against a request
+  that never returns at all - PHP's own execution time limit kills that case first, before it's ever recorded.
+- ***Outbound FHIR requests are now constrained to their category's configured server*** - Every URL this module
+  builds before sending a request is checked against that category's own `FHIR API URL` (or, for an OAuth2 token
+  request, the category's own token endpoint): it must address the same origin and sit at or below its path. A
+  request that would fall outside that (for example, one built from a malformed or hostile setting) is refused
+  rather than sent. See `FhirRequestPolicy::isWithinBase()` for exactly what this does and does not cover - it is
+  not a general SSRF guard (no DNS resolution, and it doesn't see redirects `http_get()`/`http_post()` may follow
+  after this check passes).
+
 ### FHIR Display Language Support
 As part of the 0.3 release an extra configuration option `Display Language` has been added. If this is provided it will
 be passed as a parameter to calls to the ValueSet/$expand operation. This parameter specifies the language to be used 

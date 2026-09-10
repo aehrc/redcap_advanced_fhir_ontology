@@ -28,6 +28,11 @@ namespace ExternalModules {
             return $this->systemSettings[$key] ?? null;
         }
 
+        public function setSystemSetting($key, $value)
+        {
+            $this->systemSettings[$key] = $value;
+        }
+
         public function getSubSettings($key, $project_id = null)
         {
             return $this->subSettings[$key] ?? [];
