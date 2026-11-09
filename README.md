@@ -162,6 +162,47 @@ For each ontology the following settings are available.
 ### ValueSet
 
 
+#### Previewing a ValueSet
+
+Unlike the original FHIR ontology module, the module configuration dialog has no way to preview the codes a
+ValueSet will return. Before saving an ontology, check that the ValueSet contains the kind of terms your users
+will type. For example, the AMT *Medicinal product pack* reference set (`refset/929360081000036101`) only holds
+generic names such as "Paracetamol 500 mg tablet, 20", so a search for a brand name such as "panadol" returns
+nothing. Brand names are in the *Trade product* reference sets instead.
+
+**ValueSet URL** - open a `$expand` request in a browser tab, replacing the FHIR API URL, ValueSet and search text
+with your own:
+
+```
+https://r4.ontoserver.csiro.au/fhir/ValueSet/$expand?url=http%3A%2F%2Fsnomed.info%2Fsct%3Ffhir_vs%3Drefset%2F929360081000036101&filter=paracetamol&count=10
+```
+
+The response is the same expansion the module asks for when a user types in the field: `expansion.total` is the
+number of matching codes and `expansion.contains` lists the first `count` of them (`code`, `system` and
+`display`, which feed the Code and Display templates). Leave `filter` off to see the start of the whole ValueSet.
+URL-encode the ValueSet URL (any online URL encoder will do), particularly for ECL ValueSets, which contain spaces
+and other special characters. An error response (an `OperationOutcome`) usually means the server doesn't know the
+ValueSet or code system, for example a SNOMED CT reference set that isn't in the server's default edition.
+
+**ValueSet Resource (JSON)** - a browser can't send the resource, so POST it to `$expand` instead, e.g. with curl:
+
+```bash
+curl -X POST 'https://r4.ontoserver.csiro.au/fhir/ValueSet/$expand' \
+  -H 'Content-Type: application/fhir+json' -H 'Accept: application/fhir+json' \
+  -d '{"resourceType":"Parameters","parameter":[
+        {"name":"valueSet","resource": <your ValueSet JSON here> },
+        {"name":"filter","valueString":"paracetamol"},
+        {"name":"count","valueInteger":10}]}'
+```
+
+If the server needs authentication, add the same credentials the module uses: an `Authorization: Bearer <token>`
+header for OAuth2 client credentials, or `-u user:password` for Basic Auth.
+
+If the preview shows the ValueSet isn't the right one, ***[Shrimp](https://ontoserver.csiro.au/shrimp)*** is a good
+way to explore SNOMED CT and find a better concept, reference set or ECL expression to build it from - then preview
+the new ValueSet as above.
+
+
 #### Implicit ValueSet
 
 Implicit value sets are those whose specification can be predicted based on the grammar of the underlying code system, 
