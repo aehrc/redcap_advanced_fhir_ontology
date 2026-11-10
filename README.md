@@ -126,7 +126,7 @@ For each ontology the following settings are available.
   * ***No Results Code*** - The value for the special value returned if the `return no results found` option is enabled.
     The code cannot contain html markup, a single or double quote.
   * ***FHIR API URL*** - The URL for the FHIR terminology server. A trailing `/` should not be included. For example
-    `https://r4.ontoserver.csiro.au/fhir` which an Australian server with the Australian edition of SNOMED CT as its 
+    `https://tx.ontoserver.csiro.au/fhir` which an Australian server with the Australian edition of SNOMED CT as its 
     default. The server also contains LOINC and other code systems. The following tool can be used to explore a FHIR
     terminology server: ***[Shrimp](https://ontoserver.csiro.au/shrimp)***
   * ***Display Language*** - Use alternative display language when making requests to the FHIR server. The value will be
@@ -174,7 +174,7 @@ nothing. Brand names are in the *Trade product* reference sets instead.
 with your own:
 
 ```
-https://r4.ontoserver.csiro.au/fhir/ValueSet/$expand?url=http%3A%2F%2Fsnomed.info%2Fsct%3Ffhir_vs%3Drefset%2F929360081000036101&filter=paracetamol&count=10
+https://tx.ontoserver.csiro.au/fhir/ValueSet/$expand?url=http%3A%2F%2Fsnomed.info%2Fsct%3Ffhir_vs%3Drefset%2F929360081000036101&filter=paracetamol&count=10
 ```
 
 The response is the same expansion the module asks for when a user types in the field: `expansion.total` is the
@@ -187,7 +187,7 @@ ValueSet or code system, for example a SNOMED CT reference set that isn't in the
 **ValueSet Resource (JSON)** - a browser can't send the resource, so POST it to `$expand` instead, e.g. with curl:
 
 ```bash
-curl -X POST 'https://r4.ontoserver.csiro.au/fhir/ValueSet/$expand' \
+curl -X POST 'https://tx.ontoserver.csiro.au/fhir/ValueSet/$expand' \
   -H 'Content-Type: application/fhir+json' -H 'Accept: application/fhir+json' \
   -d '{"resourceType":"Parameters","parameter":[
         {"name":"valueSet","resource": <your ValueSet JSON here> },
@@ -228,7 +228,7 @@ A SNOMED CT implicit value set URL has two parts:
 
 "http://snomed.info/sct" should be understood to mean an unspecified edition/version. This defines an incomplete value set whose actual membership will depend on the particular edition used when it is expanded. If no version or edition is specified, the terminology service SHALL use the latest version available for its default edition (or the international edition, if no other edition is the default).
 
-The default terminology service for this module, `https://r4.ontoserver.csiro.au/fhir` is an Australian server and has the Australian edition of SNOMEDCT as its default.
+The default terminology service for this module, `https://tx.ontoserver.csiro.au/fhir` is an Australian server and has the Australian edition of SNOMEDCT as its default.
 
 To define an edition and version the url is `http://snomed.info/sct/<edition>/version/<version>`. To get the latest version of an edition then `http://snomed.info/sct/<edition>` is used.
 

@@ -115,7 +115,7 @@
         {
           "key": "fhir_server_info",
           "tt_name": "fhir_server_info",
-          "name": "Settings for the FHIR server to use. The OAuth settings are only required if OAuth2 client credentials authentication is selected. Example FHIR api url eg. https://r4.ontoserver.csiro.au/fhir. Don't leave a trailing slash.",
+          "name": "Settings for the FHIR server to use. The OAuth settings are only required if OAuth2 client credentials authentication is selected. Example FHIR api url eg. https://tx.ontoserver.csiro.au/fhir. Don't leave a trailing slash.",
           "type": "descriptive"
         },
         {
