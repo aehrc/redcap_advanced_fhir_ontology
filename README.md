@@ -126,7 +126,7 @@ For each ontology the following settings are available.
   * ***No Results Code*** - The value for the special value returned if the `return no results found` option is enabled.
     The code cannot contain html markup, a single or double quote.
   * ***FHIR API URL*** - The URL for the FHIR terminology server. A trailing `/` should not be included. For example
-    `https://r4.ontoserver.csiro.au/fhir` which an Australian server with the Australian edition of SNOMED CT as its 
+    `https://tx.ontoserver.csiro.au/fhir` which an Australian server with the Australian edition of SNOMED CT as its 
     default. The server also contains LOINC and other code systems. The following tool can be used to explore a FHIR
     terminology server: ***[Shrimp](https://ontoserver.csiro.au/shrimp)***
   * ***Display Language*** - Use alternative display language when making requests to the FHIR server. The value will be
@@ -145,6 +145,11 @@ For each ontology the following settings are available.
     server. Required when `Authentication Type` is `Basic Auth`.
   * ***Basic Auth User Password*** - The user password to pass in an `Authorization: Basic` header when making requests
     to the FHIR server. Required when `Authentication Type` is `Basic Auth`.
+
+    Your browser's password manager may fill the OAuth2 Client Id/Secret and Basic Auth User Id/Password fields with
+    your saved REDCap username and password, because each pair looks like a login form. Clear them before saving
+    unless they hold the real credentials - otherwise your REDCap login is saved in the module settings, and sent to
+    the FHIR server if that authentication type is selected.
   * ***ValueSet Type*** - What form the valueset field takes, this can either be `ValueSet URL` in which case the 
     ValueSet setting is the url of the valueset to use. Alternatively the type can be `ValueSet Resource (JSON)` in 
     which case the ValueSet setting should be a JSON representation of the ValueSet Resource. Using a ValueSet resource
@@ -160,6 +165,47 @@ For each ontology the following settings are available.
 
 
 ### ValueSet
+
+
+#### Previewing a ValueSet
+
+Unlike the original FHIR ontology module, the module configuration dialog has no way to preview the codes a
+ValueSet will return. Before saving an ontology, check that the ValueSet contains the kind of terms your users
+will type. For example, the AMT *Medicinal product pack* reference set (`refset/929360081000036101`) only holds
+generic names such as "Paracetamol 500 mg tablet, 20", so a search for a brand name such as "panadol" returns
+nothing. Brand names are in the *Trade product* reference sets instead.
+
+**ValueSet URL** - open a `$expand` request in a browser tab, replacing the FHIR API URL, ValueSet and search text
+with your own:
+
+```
+https://tx.ontoserver.csiro.au/fhir/ValueSet/$expand?url=http%3A%2F%2Fsnomed.info%2Fsct%3Ffhir_vs%3Drefset%2F929360081000036101&filter=paracetamol&count=10
+```
+
+The response is the same expansion the module asks for when a user types in the field: `expansion.total` is the
+number of matching codes and `expansion.contains` lists the first `count` of them (`code`, `system` and
+`display`, which feed the Code and Display templates). Leave `filter` off to see the start of the whole ValueSet.
+URL-encode the ValueSet URL (any online URL encoder will do), particularly for ECL ValueSets, which contain spaces
+and other special characters. An error response (an `OperationOutcome`) usually means the server doesn't know the
+ValueSet or code system, for example a SNOMED CT reference set that isn't in the server's default edition.
+
+**ValueSet Resource (JSON)** - a browser can't send the resource, so POST it to `$expand` instead, e.g. with curl:
+
+```bash
+curl -X POST 'https://tx.ontoserver.csiro.au/fhir/ValueSet/$expand' \
+  -H 'Content-Type: application/fhir+json' -H 'Accept: application/fhir+json' \
+  -d '{"resourceType":"Parameters","parameter":[
+        {"name":"valueSet","resource": <your ValueSet JSON here> },
+        {"name":"filter","valueString":"paracetamol"},
+        {"name":"count","valueInteger":10}]}'
+```
+
+If the server needs authentication, add the same credentials the module uses: an `Authorization: Bearer <token>`
+header for OAuth2 client credentials, or `-u user:password` for Basic Auth.
+
+If the preview shows the ValueSet isn't the right one, ***[Shrimp](https://ontoserver.csiro.au/shrimp)*** is a good
+way to explore SNOMED CT and find a better concept, reference set or ECL expression to build it from - then preview
+the new ValueSet as above.
 
 
 #### Implicit ValueSet
@@ -187,7 +233,7 @@ A SNOMED CT implicit value set URL has two parts:
 
 "http://snomed.info/sct" should be understood to mean an unspecified edition/version. This defines an incomplete value set whose actual membership will depend on the particular edition used when it is expanded. If no version or edition is specified, the terminology service SHALL use the latest version available for its default edition (or the international edition, if no other edition is the default).
 
-The default terminology service for this module, `https://r4.ontoserver.csiro.au/fhir` is an Australian server and has the Australian edition of SNOMEDCT as its default.
+The default terminology service for this module, `https://tx.ontoserver.csiro.au/fhir` is an Australian server and has the Australian edition of SNOMEDCT as its default.
 
 To define an edition and version the url is `http://snomed.info/sct/<edition>/version/<version>`. To get the latest version of an edition then `http://snomed.info/sct/<edition>` is used.
 
