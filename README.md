@@ -145,6 +145,11 @@ For each ontology the following settings are available.
     server. Required when `Authentication Type` is `Basic Auth`.
   * ***Basic Auth User Password*** - The user password to pass in an `Authorization: Basic` header when making requests
     to the FHIR server. Required when `Authentication Type` is `Basic Auth`.
+
+    Your browser's password manager may fill the OAuth2 Client Id/Secret and Basic Auth User Id/Password fields with
+    your saved REDCap username and password, because each pair looks like a login form. Clear them before saving
+    unless they hold the real credentials - otherwise your REDCap login is saved in the module settings, and sent to
+    the FHIR server if that authentication type is selected.
   * ***ValueSet Type*** - What form the valueset field takes, this can either be `ValueSet URL` in which case the 
     ValueSet setting is the url of the valueset to use. Alternatively the type can be `ValueSet Resource (JSON)` in 
     which case the ValueSet setting should be a JSON representation of the ValueSet Resource. Using a ValueSet resource
