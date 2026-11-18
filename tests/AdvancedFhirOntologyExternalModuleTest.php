@@ -101,6 +101,16 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->assertLessThanOrEqual($after + 3600, $_SESSION[$expireKey]);
     }
 
+    public function testATokenThatIsNotAValidBearerTokenIsRefusedAndNotCached(): void
+    {
+        // (it would go into an Authorization header on every FHIR request: a CR/LF could inject headers)
+        FakeHttpTransport::$response = json_encode(['access_token' => "tok\r\nX-Injected: 1", 'expires_in' => 3600]);
+
+        $this->assertFalse($this->module->getClientCredentialsToken('cat', 'https://example.test/token', 'id', 'secret'));
+        $cached = array_filter(array_keys($_SESSION), fn($k) => str_starts_with($k, 'ADVFHIR_'));
+        $this->assertSame([], array_values($cached), 'nothing is cached for a refused token');
+    }
+
     public function testDifferentClientIdsOnTheSameTokenEndpointDoNotShareACachedToken(): void
     {
         // Regression: the cache key used to be keyed by token endpoint alone, so
