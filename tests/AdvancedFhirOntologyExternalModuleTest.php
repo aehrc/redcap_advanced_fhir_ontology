@@ -101,6 +101,46 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->assertLessThanOrEqual($after + 3600, $_SESSION[$expireKey]);
     }
 
+    public function testATokenThatIsNotAValidBearerTokenIsRefusedAndNotCached(): void
+    {
+        // (it would go into an Authorization header on every FHIR request: a CR/LF could inject headers)
+        FakeHttpTransport::$response = json_encode(['access_token' => "tok\r\nX-Injected: 1", 'expires_in' => 3600]);
+
+        $this->assertFalse($this->module->getClientCredentialsToken('cat', 'https://example.test/token', 'id', 'secret'));
+        $cached = array_filter(array_keys($_SESSION), fn($k) => str_starts_with($k, 'ADVFHIR_'));
+        $this->assertSame([], array_values($cached), 'nothing is cached for a refused token');
+    }
+
+    public function testACachedTokenThatCannotGoInAHeaderIsFetchedAgain(): void
+    {
+        // (e.g. cached before the check came in)
+        $suffix = hash('sha256', "https://example.test/token\0id\0secret");
+        $_SESSION['ADVFHIR_' . $suffix . '_TOKEN'] = "old\r\nX-Injected: 1";
+        $_SESSION['ADVFHIR_' . $suffix . '_TOKEN_EXPIRES'] = time() + 3600;
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-new', 'expires_in' => 3600]);
+
+        $this->assertSame('tok-new', $this->module->getClientCredentialsToken('cat', 'https://example.test/token', 'id', 'secret'));
+        $this->assertCount(1, FakeHttpTransport::$calls, 'a fresh token was fetched');
+    }
+
+    public function testTheSettingsCheckReportsATokenThatCannotGoInAHeader(): void
+    {
+        $settings = [
+            'ontology-id' => ['ont'], 'ontology-name' => ['Ontology'], 'code-template' => [''], 'display-template' => [''],
+            'return-no-result' => [false], 'no-result-label' => [''], 'no-result-code' => [''],
+            'fhir-api-url' => ['https://example.test/fhir'], 'authentication-type' => ['cc'],
+            'cc-token-endpoint' => ['https://example.test/token'], 'cc-client-id' => ['id'], 'cc-client-secret' => ['secret'],
+            'basic-user-id' => [''], 'basic-user-password' => [''], 'valueset-type' => ['url'],
+            'valueset' => ['http://example.test/vs'], 'priority-codes' => [''], 'priority-max-fetch' => [''], 'banned-codes' => [''],
+        ];
+        FakeHttpTransport::$response = json_encode(['access_token' => "tok\r\nX-Injected: 1"]);
+        $this->assertStringContainsString("can't be sent in a header", (string) $this->module->validateSettings($settings));
+
+        FakeHttpTransport::reset();
+        FakeHttpTransport::$response = json_encode(['access_token' => 'tok-1']);
+        $this->assertStringNotContainsString("can't be sent in a header", (string) $this->module->validateSettings($settings));
+    }
+
     public function testDifferentClientIdsOnTheSameTokenEndpointDoNotShareACachedToken(): void
     {
         // Regression: the cache key used to be keyed by token endpoint alone, so
