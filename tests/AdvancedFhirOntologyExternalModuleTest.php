@@ -141,6 +141,23 @@ final class AdvancedFhirOntologyExternalModuleTest extends TestCase
         $this->assertStringNotContainsString("can't be sent in a header", (string) $this->module->validateSettings($settings));
     }
 
+    public function testTheSettingsCheckShowsAResponseWithoutATokenEscapedAndBounded(): void
+    {
+        $settings = [
+            'ontology-id' => ['ont'], 'ontology-name' => ['Ontology'], 'code-template' => [''], 'display-template' => [''],
+            'return-no-result' => [false], 'no-result-label' => [''], 'no-result-code' => [''],
+            'fhir-api-url' => ['https://example.test/fhir'], 'authentication-type' => ['cc'],
+            'cc-token-endpoint' => ['https://example.test/token'], 'cc-client-id' => ['id'], 'cc-client-secret' => ['secret'],
+            'basic-user-id' => [''], 'basic-user-password' => [''], 'valueset-type' => ['url'],
+            'valueset' => ['http://example.test/vs'], 'priority-codes' => [''], 'priority-max-fetch' => [''], 'banned-codes' => [''],
+        ];
+        FakeHttpTransport::$response = json_encode(['note' => '<script>alert(1)</script>' . str_repeat('x', 2000)]);
+        $errors = (string) $this->module->validateSettings($settings);
+        $this->assertStringContainsString('no access_token in the response', $errors);
+        $this->assertStringNotContainsString('<script>', $errors);
+        $this->assertLessThan(1500, strlen($errors), 'the response is bounded');
+    }
+
     public function testDifferentClientIdsOnTheSameTokenEndpointDoNotShareACachedToken(): void
     {
         // Regression: the cache key used to be keyed by token endpoint alone, so
