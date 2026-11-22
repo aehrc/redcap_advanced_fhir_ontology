@@ -181,8 +181,7 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                     try {
                         $response = $this->httpPost($authEndpoint, $params, 'application/x-www-form-urlencoded', $headers, $authEndpoint);
                         if ($response === false) {
-                            $r = isset($http_response_header) ? implode("", $http_response_header) : '';
-                            $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' response = false, r='" . $r . "'\n";
+                            $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - request failed or was refused\n";
                         } else {
                             // a false or unparseable response decodes to null, and array_key_exists(null)
                             // is a fatal TypeError on PHP 8
@@ -190,7 +189,9 @@ class AdvancedFhirOntologyExternalModule extends AbstractExternalModule implemen
                             if (!is_array($responseJson)) {
                                 $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - no parseable response\n";
                             } else if (!array_key_exists('access_token', $responseJson)) {
-                                $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "'$response\n";
+                                $errors .= "Ontology Id " . $id . " - Failed to get Authentication Token for fhir server at '" . $authEndpoint . "' - no access_token in the response: " . substr((string) json_encode($response, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT), 0, 500) . "\n";
+                            } else if (FhirRequestPolicy::bearerToken($responseJson['access_token']) === null) {
+                                $errors .= "Ontology Id " . $id . " - The Authentication Token from '" . $authEndpoint . "' can't be sent in a header (it must be printable ASCII text with no spaces)\n";
                             }
                         }
                     } catch (\Exception $e) {
@@ -718,7 +719,9 @@ EOD;
             foreach ($headers as $hvalue) {
                 $headerText .= $hvalue . "\r\n";
             }
-            $http_array = array('method' => 'GET', 'header' => $headerText, 'timeout' => $timeout);
+            // (no redirects: the stream wrapper would send the Authorization header on to wherever one
+            // points - curl, the usual path, follows them but (libcurl 7.58+) doesn't send it to another host)
+            $http_array = array('method' => 'GET', 'header' => $headerText, 'timeout' => $timeout, 'follow_location' => 0);
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
                 $http_array['proxy'] = str_replace(array('http://', 'https://'), array('tcp://', 'tcp://'), PROXY_HOSTNAME);
@@ -734,6 +737,12 @@ EOD;
             }
             // Use file_get_contents
             $content = @file_get_contents($fullUrl, false, stream_context_create(array('http' => $http_array)));
+            // (a redirect isn't followed - see above - so it's a failure, as curl's own 404/5xx are,
+            // rather than an empty answer)
+            if ($content !== false && FhirRequestPolicy::isRedirectResponse($http_response_header ?? [])) {
+                error_log('AdvancedFhirOntologyExternalModule: not following a redirect from ' . $this->urlForLogging($fullUrl) . ' - configure the URL it points to');
+                $content = false;
+            }
         } else {
             $content = false;
         }
@@ -830,7 +839,10 @@ EOD;
             $http_array = array('method' => 'POST',
                 'header' => "Content-type: $contentType" . "\r\n" . $headerText . "Content-Length: " . strlen($param_string) . "\r\n",
                 'content' => $param_string,
-                'timeout' => $timeout
+                'timeout' => $timeout,
+                // (no redirects: the stream wrapper would send the Authorization header on to wherever one
+                // points - curl, the usual path, follows them but (libcurl 7.58+) doesn't send it to another host)
+                'follow_location' => 0
             );
             // If using a proxy
             if (!sameHostUrl($fullUrl) && PROXY_HOSTNAME != '') {
@@ -843,12 +855,22 @@ EOD;
 
             // Use file_get_contents
             $content = @file_get_contents($fullUrl, false, stream_context_create(array('http' => $http_array)));
+            // (a redirect isn't followed - see above - so it's a failure, as curl's own 404/5xx are,
+            // rather than an empty answer)
+            if ($content !== false && FhirRequestPolicy::isRedirectResponse($http_response_header ?? [])) {
+                error_log('AdvancedFhirOntologyExternalModule: not following a redirect from ' . $this->urlForLogging($fullUrl) . ' - configure the URL it points to');
+                $content = false;
+            }
 
             // Return the content
             if ($content !== false) {
                 return $content;
             } // If no content, check the headers to see if it's hiding there (why? not sure, but it happens)
             else {
+                if (empty($http_response_header)) {
+                    // (the connection failed: no response at all)
+                    return false;
+                }
                 $content = implode("", $http_response_header);
                 //  If header is a true header, then return false, else return the content found in the header
                 return (substr($content, 0, 5) == 'HTTP/') ? false : $content;
@@ -953,8 +975,12 @@ EOD;
             array_key_exists($tokenKey, $_SESSION)) {
             $expire = $_SESSION[$expireKey];
             if ($now < $expire) {
-                // not expired.
-                return $_SESSION[$tokenKey];
+                // not expired - and still a token that can go in a header (one cached before that
+                // check came in is fetched again)
+                $cached = FhirRequestPolicy::bearerToken($_SESSION[$tokenKey]);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
 
@@ -971,27 +997,33 @@ EOD;
             // is a fatal TypeError on PHP 8
             $responseJson = is_string($response) ? json_decode($response, true) : null;
             if (!is_array($responseJson)) {
-                error_log("Failed to negotiate auth token : no parseable response from " . $tokenEndpoint);
+                error_log("Failed to negotiate auth token : no parseable response from " . $this->urlForLogging($tokenEndpoint));
             } elseif (array_key_exists('access_token', $responseJson)) {
-                $clear = false;
-                $_SESSION[$tokenKey] = $responseJson['access_token'];
-                // expires_in is SECONDS (RFC 6749) and $now is seconds - the previous
-                // * 1000 cached a 3600s token for roughly 41 days. Renew early by
-                // margin = min(60, floor(lifetime / 2)): a minute early for normal
-                // lifetimes, halfway through for very short ones, and never an expiry
-                // beyond the real one.
-                $lifetime = array_key_exists('expires_in', $responseJson)
-                    ? (int)$responseJson['expires_in']
-                    : 3600;
-                if ($lifetime < 1) {
-                    $lifetime = 1;
+                // (it goes into an Authorization header: never one that could inject headers)
+                $token = FhirRequestPolicy::bearerToken($responseJson['access_token']);
+                if ($token === null) {
+                    error_log("Failed to negotiate auth token : the access_token from " . $this->urlForLogging($tokenEndpoint) . " can't be sent in a header");
+                } else {
+                    $clear = false;
+                    $_SESSION[$tokenKey] = $token;
+                    // expires_in is SECONDS (RFC 6749) and $now is seconds - the previous
+                    // * 1000 cached a 3600s token for roughly 41 days. Renew early by
+                    // margin = min(60, floor(lifetime / 2)): a minute early for normal
+                    // lifetimes, halfway through for very short ones, and never an expiry
+                    // beyond the real one.
+                    $lifetime = array_key_exists('expires_in', $responseJson)
+                        ? (int)$responseJson['expires_in']
+                        : 3600;
+                    if ($lifetime < 1) {
+                        $lifetime = 1;
+                    }
+                    $margin = (int)min(60, floor($lifetime / 2));
+                    $_SESSION[$expireKey] = $now + $lifetime - $margin;
                 }
-                $margin = (int)min(60, floor($lifetime / 2));
-                $_SESSION[$expireKey] = $now + $lifetime - $margin;
             } elseif (array_key_exists('error', $responseJson)) {
-                error_log("Failed to negotiate auth token : " . $responseJson['error'] . " - " . $responseJson['error_description']);
+                error_log("Failed to negotiate auth token : " . json_encode($responseJson['error'], JSON_INVALID_UTF8_SUBSTITUTE) . " - " . json_encode($responseJson['error_description'] ?? '', JSON_INVALID_UTF8_SUBSTITUTE));
             } else {
-                error_log("Failed to negotiate auth token : " . $response);
+                error_log("Failed to negotiate auth token : no access_token in " . substr((string) json_encode($response, JSON_INVALID_UTF8_SUBSTITUTE), 0, 500));
             }
         } catch (\Exception $e) {
             $error_code = $e->getCode();
